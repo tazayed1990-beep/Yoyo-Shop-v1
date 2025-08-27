@@ -1,0 +1,5 @@
+{
+  "name": "Yoyo Shop",
+  "description": "A comprehensive business management application for 'Yoyo Shop', built with React and Firebase. It features customer and product management, order tracking with detailed production/shipping statuses, invoice generation, and an analytics dashboard. The app supports multiple user roles (Admin, Staff, Viewer) and is bilingual (English/Arabic).",
+  "requestFramePermissions": []
+}

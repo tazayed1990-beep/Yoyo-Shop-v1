@@ -1,0 +1,329 @@
+import React, { useState } from 'react';
+import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
+import Card from '../components/ui/Card';
+import { db } from '../services/firebase';
+import { Order, Product, Customer, Material, Expense } from '../types';
+import Spinner from '../components/ui/Spinner';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
+import { formatCurrency } from '../utils/formatting';
+
+interface ReportData {
+  totalOrders: number;
+  totalRevenue: number;
+  totalProductsSold: number;
+  customers: Customer[];
+  totalMaterialCost: number;
+  materialsUsed: { name: string; quantity: number; unitLabel: string }[];
+  totalExpenses: number;
+  profit: number;
+}
+
+const Reports: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+  });
+  const [allOrdersInPeriod, setAllOrdersInPeriod] = useState<Order[]>([]);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [selectedCustomerOrders, setSelectedCustomerOrders] = useState<{customerName: string; orders: Order[]}>({ customerName: '', orders: [] });
+
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilters({ ...filters, [e.target.name]: e.target.value });
+  };
+  
+  const generateReport = async () => {
+    if (!filters.startDate || !filters.endDate) {
+      alert('Please select a start and end date.');
+      return;
+    }
+    setLoading(true);
+    setReportData(null);
+
+    const startDate = Timestamp.fromDate(new Date(filters.startDate));
+    const endDate = Timestamp.fromDate(new Date(filters.endDate + 'T23:59:59'));
+
+    try {
+      // 1. Fetch all necessary data in parallel
+      // FIX: Removed `where('isCancelled', '!=', true)` to avoid composite index requirement.
+      // Filtering will be done client-side.
+      const ordersQuery = query(
+        collection(db, 'orders'),
+        where('createdAt', '>=', startDate),
+        where('createdAt', '<=', endDate)
+      );
+      const expensesQuery = query(
+        collection(db, 'expenses'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate)
+      );
+
+      const [
+        ordersSnapshot, 
+        customersSnapshot, 
+        productsSnapshot, 
+        materialsSnapshot, 
+        expensesSnapshot
+      ] = await Promise.all([
+        getDocs(ordersQuery),
+        getDocs(collection(db, 'customers')),
+        getDocs(collection(db, 'products')),
+        getDocs(collection(db, 'materials')),
+        getDocs(expensesQuery)
+      ]);
+
+      const ordersInPeriod = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: (doc.data().createdAt as Timestamp).toDate() }) as Order);
+      const filteredOrders = ordersInPeriod.filter(order => !order.isCancelled);
+      setAllOrdersInPeriod(filteredOrders);
+
+      const allCustomers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Customer);
+      const productsMap = new Map<string, Product>(productsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as Product]));
+      const materialsMap = new Map<string, Material>(materialsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as Material]));
+      const filteredExpenses = expensesSnapshot.docs.map(doc => doc.data() as Expense);
+
+      // 2. Process data and calculate metrics
+
+      // Sales
+      const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.total, 0);
+      const totalProductsSold = filteredOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.qty, 0), 0);
+
+      // Customers
+      const customerMetrics = new Map<string, { orderCount: number; totalSpent: number }>();
+      filteredOrders.forEach(order => {
+        const currentMetrics = customerMetrics.get(order.customerId) || { orderCount: 0, totalSpent: 0 };
+        currentMetrics.orderCount++;
+        currentMetrics.totalSpent += order.total;
+        customerMetrics.set(order.customerId, currentMetrics);
+      });
+
+      const customerReport = allCustomers
+        .map(customer => ({
+          ...customer,
+          orderCount: customerMetrics.get(customer.id)?.orderCount || 0,
+          totalSpent: customerMetrics.get(customer.id)?.totalSpent || 0,
+        }))
+        .filter(customer => (customer.orderCount ?? 0) > 0) // Only show customers with orders in the period
+        .sort((a, b) => (b.orderCount ?? 0) - (a.orderCount ?? 0));
+
+      // Materials
+      const totalMaterialCost = filteredOrders.reduce((sum, order) => {
+        return sum + order.items.reduce((itemSum, item) => itemSum + (item.materialsCost * item.qty), 0);
+      }, 0);
+      
+      const materialsUsedMap = new Map<string, number>();
+      filteredOrders.forEach(order => {
+        order.items.forEach(item => {
+          const product = productsMap.get(item.productId);
+          if (product) {
+            product.materials.forEach(prodMaterial => {
+              const currentQty = materialsUsedMap.get(prodMaterial.materialId) || 0;
+              materialsUsedMap.set(prodMaterial.materialId, currentQty + (prodMaterial.quantity * item.qty));
+            });
+          }
+        });
+      });
+
+      const materialsUsedReport: { name: string; quantity: number; unitLabel: string }[] = [];
+      materialsUsedMap.forEach((quantity, materialId) => {
+        const material = materialsMap.get(materialId);
+        if (material) {
+          materialsUsedReport.push({
+            name: material.name,
+            quantity: quantity,
+            unitLabel: material.unitLabel,
+          });
+        }
+      });
+
+      // Expenses
+      const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+
+      // Profit
+      const profit = totalRevenue - totalMaterialCost - totalExpenses;
+
+      setReportData({
+        totalOrders: filteredOrders.length,
+        totalRevenue,
+        totalProductsSold,
+        customers: customerReport,
+        totalMaterialCost,
+        materialsUsed: materialsUsedReport,
+        totalExpenses,
+        profit,
+      });
+
+    } catch (error) {
+      console.error("Error generating report:", error);
+      alert("Failed to generate report. Check the console for details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleViewCustomerOrders = (customerId: string, customerName: string) => {
+    const orders = allOrdersInPeriod.filter(order => order.customerId === customerId);
+    setSelectedCustomerOrders({ customerName, orders });
+    setIsCustomerModalOpen(true);
+  };
+  
+  return (
+    <div>
+        <h1 className="text-3xl font-semibold text-gray-800 mb-6">Reports</h1>
+        
+        <Card className="mb-6">
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+                <Input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} label="Start Date" />
+                <Input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} label="End Date" />
+                <div className="pt-5">
+                    <Button onClick={generateReport} disabled={loading}>{loading ? 'Generating...' : 'Generate Report'}</Button>
+                </div>
+            </div>
+        </Card>
+
+        {loading && <div className="flex justify-center mt-8"><Spinner /></div>}
+        
+        {!loading && !reportData && (
+            <Card>
+                <p className="text-center text-gray-500">Please select a date range and generate a report to see the data.</p>
+            </Card>
+        )}
+
+        {reportData && (
+            <div className="space-y-6">
+                {/* Sales & Profit Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card title="Sales Summary">
+                        <div className="space-y-4">
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Total Orders</span>
+                                <span className="font-bold">{reportData.totalOrders}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Total Revenue</span>
+                                <span className="font-bold">{formatCurrency(reportData.totalRevenue)}</span>
+                            </div>
+                             <div className="flex justify-between">
+                                <span className="text-gray-600">Total Products Sold</span>
+                                <span className="font-bold">{reportData.totalProductsSold}</span>
+                            </div>
+                        </div>
+                    </Card>
+                    <Card title="Profit & Loss">
+                        <div className="space-y-4">
+                             <div className="flex justify-between">
+                                <span className="text-green-600">Total Revenue</span>
+                                <span className="font-bold text-green-600">{formatCurrency(reportData.totalRevenue)}</span>
+                            </div>
+                             <div className="flex justify-between">
+                                <span className="text-red-600">(-) Total Material Costs</span>
+                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalMaterialCost)}</span>
+                            </div>
+                             <div className="flex justify-between">
+                                <span className="text-red-600">(-) Total Expenses</span>
+                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalExpenses)}</span>
+                            </div>
+                            <div className={`flex justify-between border-t pt-2 mt-2 ${reportData.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                <span className="font-bold text-lg">Net Profit / Loss</span>
+                                <span className="font-bold text-lg">{formatCurrency(reportData.profit)}</span>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Customer Report */}
+                <Card title={`Active Customers in Period (${reportData.customers.length} total)`}>
+                     <div className="overflow-x-auto max-h-96">
+                        <table className="min-w-full leading-normal">
+                            <thead>
+                                <tr>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Customer Name</th>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Orders</th>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Total Spent</th>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reportData.customers.map(customer => (
+                                    <tr key={customer.id}>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">{customer.fullName}</td>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">{customer.orderCount}</td>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">{formatCurrency(customer.totalSpent ?? 0)}</td>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm text-right">
+                                            {(customer.orderCount ?? 0) > 0 && 
+                                                <Button size="sm" onClick={() => handleViewCustomerOrders(customer.id, customer.fullName)}>View Orders</Button>
+                                            }
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+
+                {/* Materials Report */}
+                <Card title="Materials Usage Report">
+                    <div className="overflow-x-auto max-h-96">
+                         <div className="mb-4 text-center">
+                            <span className="text-gray-600">Total Material Cost for Period: </span>
+                            <span className="font-bold text-lg">{formatCurrency(reportData.totalMaterialCost)}</span>
+                        </div>
+                        <table className="min-w-full leading-normal">
+                            <thead>
+                                <tr>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Material Name</th>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Total Quantity Used</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reportData.materialsUsed.sort((a,b) => a.name.localeCompare(b.name)).map(material => (
+                                    <tr key={material.name}>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">{material.name}</td>
+                                        <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">{material.quantity.toFixed(2)} {material.unitLabel}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        )}
+        
+        {/* Customer Orders Modal */}
+        <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title={`Orders for ${selectedCustomerOrders.customerName}`}>
+            <div className="max-h-[60vh] overflow-y-auto">
+                <table className="min-w-full leading-normal">
+                     <thead>
+                        <tr>
+                            <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                            <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Total</th>
+                            <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase">Items</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {selectedCustomerOrders.orders.map(order => (
+                            <tr key={order.id}>
+                                <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">
+                                    {order.createdAt.toLocaleDateString()}
+                                </td>
+                                <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">
+                                    {formatCurrency(order.total)}
+                                </td>
+                                <td className="px-5 py-3 border-b border-gray-200 bg-white text-sm">
+                                    {order.items.map(item => `${item.qty}x ${item.name}`).join(', ')}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </Modal>
+
+    </div>
+  );
+};
+
+export default Reports;
