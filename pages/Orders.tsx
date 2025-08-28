@@ -1,5 +1,11 @@
+
+
+
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, deleteDoc, serverTimestamp, writeBatch, increment, WriteBatch } from 'firebase/firestore';
+// Fix: Use v8 firestore features by importing firebase.
+// Fix: Use Firebase v9 compat libraries to get firestore namespace.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
 import { db } from '../services/firebase';
 import { Order, ProductionStatus, ShippingStatus, Customer, Product, OrderItem } from '../types';
 import { PRODUCTION_STATUSES, SHIPPING_STATUSES } from '../constants';
@@ -55,22 +61,27 @@ const Orders: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const ordersQuery = await getDocs(collection(db, 'orders'));
+    // Fix: use v8 get() syntax.
+    const ordersQuery = await db.collection('orders').get();
     const ordersData = ordersQuery.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
-      updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+      // Fix: Cast to any to call toDate() on v8 Timestamp.
+      createdAt: (doc.data().createdAt as any)?.toDate(),
+      updatedAt: (doc.data().updatedAt as any)?.toDate(),
     })) as Order[];
     setOrders(ordersData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
 
-    const customersQuery = await getDocs(collection(db, 'customers'));
+    // Fix: use v8 get() syntax.
+    const customersQuery = await db.collection('customers').get();
     setCustomers(customersQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
     
-    const productsQuery = await getDocs(collection(db, 'products'));
+    // Fix: use v8 get() syntax.
+    const productsQuery = await db.collection('products').get();
     setProducts(productsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
     
-    const materialsQuery = await getDocs(collection(db, 'materials'));
+    // Fix: use v8 get() syntax.
+    const materialsQuery = await db.collection('materials').get();
     setMaterials(materialsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
     setLoading(false);
@@ -131,14 +142,17 @@ const Orders: React.FC = () => {
     setFormState(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index)}));
   };
   
-  const addStockDeductionsToBatch = (batch: WriteBatch, orderData: { items: OrderItem[] }) => {
+  // Fix: Use v8 WriteBatch type.
+  const addStockDeductionsToBatch = (batch: firebase.firestore.WriteBatch, orderData: { items: OrderItem[] }) => {
     for (const item of orderData.items) {
       const product = products.find(p => p.id === item.productId);
       if (product?.materials) {
         for (const prodMaterial of product.materials) {
-          const materialDocRef = doc(db, 'materials', prodMaterial.materialId);
+          // Fix: use v8 doc() syntax.
+          const materialDocRef = db.collection('materials').doc(prodMaterial.materialId);
           const quantityToDeduct = prodMaterial.quantity * item.qty;
-          batch.update(materialDocRef, { stockQty: increment(-quantityToDeduct) });
+          // Fix: use v8 increment() syntax.
+          batch.update(materialDocRef, { stockQty: firebase.firestore.FieldValue.increment(-quantityToDeduct) });
         }
       }
     }
@@ -158,7 +172,8 @@ const Orders: React.FC = () => {
     };
 
     if (selectedOrder) {
-      await updateDoc(doc(db, 'orders', selectedOrder.id), {...dataToSave, updatedAt: serverTimestamp()});
+      // Fix: use v8 update() and serverTimestamp() syntax.
+      await db.collection('orders').doc(selectedOrder.id).update({...dataToSave, updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
       fetchData();
       handleCloseModal();
     } else {
@@ -176,14 +191,17 @@ const Orders: React.FC = () => {
         const data = {
             ...pendingOrder,
             stockDeducted: deductStock,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+            // Fix: use v8 serverTimestamp() syntax.
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         };
 
-        const newOrderRef = await addDoc(collection(db, 'orders'), data);
+        // Fix: use v8 add() syntax.
+        const newOrderRef = await db.collection('orders').add(data);
         
         if (deductStock) {
-            const batch = writeBatch(db);
+            // Fix: use v8 batch() syntax.
+            const batch = db.batch();
             const newOrderData = { ...pendingOrder, id: newOrderRef.id };
             addStockDeductionsToBatch(batch, newOrderData);
             await batch.commit();
@@ -201,7 +219,8 @@ const Orders: React.FC = () => {
   
   const handleDelete = async (id: string) => {
      if (window.confirm('Are you sure you want to delete this order?')) {
-        await deleteDoc(doc(db, 'orders', id));
+        // Fix: use v8 delete() syntax.
+        await db.collection('orders').doc(id).delete();
         fetchData();
     }
   };
@@ -218,8 +237,9 @@ const Orders: React.FC = () => {
         setIsStatusChangeModalOpen(true);
     } else {
         // Just update status normally
-        const orderDoc = doc(db, 'orders', orderId);
-        await updateDoc(orderDoc, { [field]: value, updatedAt: serverTimestamp() });
+        // Fix: use v8 update() and serverTimestamp() syntax.
+        const orderDoc = db.collection('orders').doc(orderId);
+        await orderDoc.update({ [field]: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
         fetchData();
     }
   };
@@ -230,12 +250,15 @@ const Orders: React.FC = () => {
     const { order, field, value } = pendingStatusChange;
     
     try {
-        const batch = writeBatch(db);
-        const orderDocRef = doc(db, 'orders', order.id);
+        // Fix: use v8 batch() syntax.
+        const batch = db.batch();
+        // Fix: use v8 doc() syntax.
+        const orderDocRef = db.collection('orders').doc(order.id);
 
         const updates: any = {
             [field]: value,
-            updatedAt: serverTimestamp()
+            // Fix: use v8 serverTimestamp() syntax.
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
 
         if (deductStock) {
@@ -259,8 +282,9 @@ const Orders: React.FC = () => {
 
   const handleCancelOrder = async (orderId: string) => {
     if (window.confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-        const orderDoc = doc(db, 'orders', orderId);
-        await updateDoc(orderDoc, { isCancelled: true, updatedAt: serverTimestamp() });
+        // Fix: use v8 update() and serverTimestamp() syntax.
+        const orderDoc = db.collection('orders').doc(orderId);
+        await orderDoc.update({ isCancelled: true, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
         fetchData();
     }
   };

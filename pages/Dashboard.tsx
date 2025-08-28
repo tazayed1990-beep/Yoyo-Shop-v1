@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 import { Order, Customer, Product, DashboardStats, Expense } from '../types';
 import Card from '../components/ui/Card';
@@ -21,12 +22,15 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     setLoading(true);
 
-    const ordersQuery = query(collection(db, 'orders'), where('isCancelled', '!=', true));
-    const customersQuery = collection(db, 'customers');
-    const expensesQuery = collection(db, 'expenses');
+    // Fix: Use v8 query syntax.
+    const ordersQuery = db.collection('orders').where('isCancelled', '!=', true);
+    // Fix: Use v8 collection reference syntax.
+    const customersQuery = db.collection('customers');
+    const expensesQuery = db.collection('expenses');
     
     // Combined listener for all data sources
-    const unsubOrders = onSnapshot(ordersQuery, (ordersSnapshot) => {
+    // Fix: Use v8 onSnapshot syntax.
+    const unsubOrders = ordersQuery.onSnapshot((ordersSnapshot) => {
       const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       
       const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
@@ -60,7 +64,8 @@ const Dashboard: React.FC = () => {
       setTopCustomers(sortedCustomers);
       
       // Best Sellers
-      const unsubProducts = onSnapshot(collection(db, 'products'), (productSnapshot) => {
+      // Fix: Use v8 onSnapshot syntax.
+      const unsubProducts = db.collection('products').onSnapshot((productSnapshot) => {
         const products = productSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
         const productMap = new Map<string, string>(products.map(p => [p.id, p.name]));
         
@@ -81,14 +86,16 @@ const Dashboard: React.FC = () => {
       return () => unsubProducts();
     }, (error) => console.error("Error fetching orders:", error));
 
-    const unsubCustomers = onSnapshot(customersQuery, (snapshot) => {
+    // Fix: Use v8 onSnapshot syntax.
+    const unsubCustomers = customersQuery.onSnapshot((snapshot) => {
       setStats(prev => ({
         ...prev,
         totalCustomers: snapshot.size,
       } as DashboardStats));
     });
 
-    const unsubExpenses = onSnapshot(expensesQuery, (snapshot) => {
+    // Fix: Use v8 onSnapshot syntax.
+    const unsubExpenses = expensesQuery.onSnapshot((snapshot) => {
       const totalExpenses = snapshot.docs.reduce((sum, doc) => sum + (doc.data() as Expense).amount, 0);
       setStats(prev => ({
         ...prev,

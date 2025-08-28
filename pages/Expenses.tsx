@@ -1,5 +1,10 @@
+
+
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+// Fix: Use v8 firestore features by importing firebase.
+// Fix: Use Firebase v9 compat libraries to get firestore namespace.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
 import { db } from '../services/firebase';
 import { Expense } from '../types';
 import Button from '../components/ui/Button';
@@ -27,11 +32,13 @@ const Expenses: React.FC = () => {
 
   useEffect(() => {
     setLoading(true);
-    const unsubscribe = onSnapshot(collection(db, 'expenses'), (querySnapshot) => {
+    // Fix: use v8 onSnapshot() syntax.
+    const unsubscribe = db.collection('expenses').onSnapshot((querySnapshot) => {
       const expensesData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-          date: (doc.data().date as Timestamp).toDate()
+          // Fix: cast to any to call toDate() on v8 Timestamp.
+          date: (doc.data().date as any).toDate()
       })) as Expense[];
       // Sort by date descending
       expensesData.sort((a, b) => (b.date as Date).getTime() - (a.date as Date).getTime());
@@ -71,14 +78,17 @@ const Expenses: React.FC = () => {
         name: formState.name,
         category: formState.category,
         amount: parseFloat(formState.amount),
-        date: Timestamp.fromDate(new Date(formState.date)),
+        // Fix: use v8 Timestamp.
+        date: firebase.firestore.Timestamp.fromDate(new Date(formState.date)),
     };
 
     try {
         if (selectedExpense) {
-            await updateDoc(doc(db, 'expenses', selectedExpense.id), dataToSave);
+            // Fix: use v8 update() syntax.
+            await db.collection('expenses').doc(selectedExpense.id).update(dataToSave);
         } else {
-            await addDoc(collection(db, 'expenses'), { ...dataToSave, createdAt: serverTimestamp() });
+            // Fix: use v8 add() and serverTimestamp() syntax.
+            await db.collection('expenses').add({ ...dataToSave, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
         }
         handleCloseModal();
     } catch (error) {
@@ -89,7 +99,8 @@ const Expenses: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
-        await deleteDoc(doc(db, 'expenses', id));
+        // Fix: use v8 delete() syntax.
+        await db.collection('expenses').doc(id).delete();
     }
   };
 

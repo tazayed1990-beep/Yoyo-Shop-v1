@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 import { Product, Material, ProductMaterial } from '../types';
 import Button from '../components/ui/Button';
@@ -31,11 +32,13 @@ const Products: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const productsQuery = await getDocs(collection(db, 'products'));
+    // Fix: use v8 get() syntax.
+    const productsQuery = await db.collection('products').get();
     const productsData = productsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Product[];
     setProducts(productsData);
 
-    const materialsQuery = await getDocs(collection(db, 'materials'));
+    // Fix: use v8 get() syntax.
+    const materialsQuery = await db.collection('materials').get();
     const materialsData = materialsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Material[];
     setMaterials(materialsData);
     
@@ -73,7 +76,9 @@ const Products: React.FC = () => {
     return productMaterials.reduce((total, pm) => {
         const material = materials.find(m => m.id === pm.materialId);
         if (!material) return total;
-        return total + (material.pricePerUnit * pm.quantity);
+        // Ensure quantity is a number before calculation
+        const quantity = typeof pm.quantity === 'number' ? pm.quantity : 0;
+        return total + (material.pricePerUnit * quantity);
     }, 0);
   };
 
@@ -114,10 +119,12 @@ const Products: React.FC = () => {
     };
 
     if (selectedProduct) {
-      const productDoc = doc(db, 'products', selectedProduct.id);
-      await updateDoc(productDoc, dataToSave);
+      // Fix: Use v8 update() syntax.
+      const productDoc = db.collection('products').doc(selectedProduct.id);
+      await productDoc.update(dataToSave);
     } else {
-      await addDoc(collection(db, 'products'), dataToSave);
+      // Fix: Use v8 add() syntax.
+      await db.collection('products').add(dataToSave);
     }
     fetchData();
     handleCloseModal();
@@ -125,7 +132,8 @@ const Products: React.FC = () => {
   
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this product?')) {
-        await deleteDoc(doc(db, 'products', id));
+        // Fix: Use v8 delete() syntax.
+        await db.collection('products').doc(id).delete();
         fetchData();
     }
   };
@@ -189,7 +197,7 @@ const Products: React.FC = () => {
                           type="number"
                           placeholder="Qty"
                           value={pm.quantity}
-                          onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value))}
+                          onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value) || 0)}
                       />
                     </div>
                     <Button type="button" variant="danger" size="sm" onClick={() => removeMaterialRow(index)}>X</Button>
@@ -199,7 +207,14 @@ const Products: React.FC = () => {
             </div>
 
             <div>
-                <p>Calculated Materials Cost: <span className="font-bold">{formatCurrency(formState.materialsCost)}</span></p>
+                <p>
+                    Calculated Materials Cost: <span className="font-bold">{formatCurrency(formState.materialsCost)}</span>
+                    {selectedProduct && selectedProduct.materialsCost.toFixed(2) !== formState.materialsCost.toFixed(2) && (
+                        <span className="text-sm text-orange-600 ml-2 animate-pulse">
+                            (was {formatCurrency(selectedProduct.materialsCost)})
+                        </span>
+                    )}
+                </p>
             </div>
             <Input label="Final Selling Price" name="price" type="number" step="0.01" value={formState.price} onChange={handleFormChange} required />
 

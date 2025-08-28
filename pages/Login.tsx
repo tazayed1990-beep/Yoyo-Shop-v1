@@ -1,7 +1,8 @@
 
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+// Fix: Remove v9 auth import.
 import { auth } from '../services/firebase';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
@@ -18,7 +19,8 @@ const Login: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // Fix: Use v8 signInWithEmailAndPassword syntax.
+      await auth.signInWithEmailAndPassword(email, password);
       navigate('/');
     } catch (err: any) {
       setError(err.message);

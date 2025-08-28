@@ -1,5 +1,10 @@
+
+
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+// Fix: Use v8 firestore features by importing firebase.
+// Fix: Use Firebase v9 compat libraries to get firestore namespace.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
 import { db } from '../services/firebase';
 import { User, UserRole } from '../types';
 import Spinner from '../components/ui/Spinner';
@@ -30,7 +35,8 @@ const Users: React.FC = () => {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'users'));
+    // Fix: use v8 get() syntax.
+    const querySnapshot = await db.collection('users').get();
     const usersData = querySnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as User[];
     setUsers(usersData);
     setLoading(false);
@@ -52,11 +58,12 @@ const Users: React.FC = () => {
         return;
     }
     try {
-        await setDoc(doc(db, 'users', formState.uid), {
+        // Fix: use v8 set() and serverTimestamp() syntax.
+        await db.collection('users').doc(formState.uid).set({
             email: formState.email,
             name: formState.name,
             role: formState.role,
-            createdAt: serverTimestamp(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
         fetchUsers();
         handleCloseModal();
@@ -68,8 +75,9 @@ const Users: React.FC = () => {
   
   const handleRoleChange = async (uid: string, role: UserRole) => {
     try {
-        const userDoc = doc(db, 'users', uid);
-        await updateDoc(userDoc, { role });
+        // Fix: use v8 update() syntax.
+        const userDoc = db.collection('users').doc(uid);
+        await userDoc.update({ role });
         // Optimistically update UI
         setUsers(users.map(u => u.uid === uid ? { ...u, role } : u));
     } catch (error) {

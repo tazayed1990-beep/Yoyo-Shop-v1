@@ -1,10 +1,11 @@
+
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../hooks/useApp';
 import { Language, Settings as SettingsType } from '../types';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
-import { doc, setDoc } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 
 const Settings: React.FC = () => {
@@ -35,8 +36,9 @@ const Settings: React.FC = () => {
     e.preventDefault();
     setIsSaving(true);
     try {
-        const settingsDoc = doc(db, 'settings', 'main');
-        await setDoc(settingsDoc, formState);
+        // Fix: Use v8 set() syntax.
+        const settingsDoc = db.collection('settings').doc('main');
+        await settingsDoc.set(formState);
         alert('Settings saved successfully!');
     } catch (error) {
         console.error("Error saving settings: ", error);

@@ -1,38 +1,31 @@
-// Import the functions you need from the SDKs you need
-// Fix: Use named import for `initializeApp` as required by Firebase v9+ modular SDK.
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+// Import Firebase services
+// Fix: Use Firebase v9 compat libraries to support v8 syntax.
+import firebase from "firebase/compat/app";
+import "firebase/compat/auth";
+import "firebase/compat/firestore";
+import "firebase/compat/analytics";
 
-// --- IMPORTANT ---
-// REPLACE THE PLACEHOLDER VALUES BELOW WITH YOUR OWN FIREBASE PROJECT CONFIGURATION
-// You can get this from your Firebase project settings:
-// Project Settings > General > Your apps > Web app > Firebase SDK snippet > Config
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  measurementId: "YOUR_MEASUREMENT_ID"
+  apiKey: "AIzaSyC4iQrNjyEmlziJa7Sqgi5r6lDa98OyFak",
+  authDomain: "yoyo-shop-7545c.firebaseapp.com",
+  projectId: "yoyo-shop-7545c",
+  storageBucket: "yoyo-shop-7545c.appspot.com",
+  messagingSenderId: "809013526444",
+  appId: "1:809013526444:web:c40c62d9d62589bf02c409",
+  measurementId: "G-3BN4ST78WM"
 };
-
-// Runtime check to ensure Firebase config is filled out
-if (firebaseConfig.apiKey === "YOUR_API_KEY" || !firebaseConfig.projectId) {
-  const errorMessage = "Firebase configuration is missing or incomplete. Please open services/firebase.ts and replace the placeholder values with your actual Firebase project credentials.";
-  console.error(errorMessage);
-  // Throw an error to halt execution and make it very obvious.
-  throw new Error(errorMessage);
-}
 
 
 // Initialize Firebase
-// Fix: Call initializeApp directly as it's a top-level function in the modular SDK.
-const app = initializeApp(firebaseConfig);
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const app = firebase.app();
 
 // Get Firebase services
-const auth = getAuth(app);
-const db = getFirestore(app);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const analytics = firebase.analytics();
 
-export { app, auth, db };
+export { app, auth, db, analytics };

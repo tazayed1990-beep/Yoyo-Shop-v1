@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 import { Customer } from '../types';
 import Button from '../components/ui/Button';
@@ -21,11 +22,13 @@ const Customers: React.FC = () => {
 
   const fetchCustomers = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'customers'));
+    // Fix: use v8 get() syntax.
+    const querySnapshot = await db.collection('customers').get();
     const customersData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        createdAt: (doc.data().createdAt as Timestamp).toDate()
+        // Fix: Cast to any to call toDate() on v8 Timestamp.
+        createdAt: (doc.data().createdAt as any).toDate()
     })) as Customer[];
     setCustomers(customersData);
     setLoading(false);
@@ -52,11 +55,13 @@ const Customers: React.FC = () => {
     e.preventDefault();
     if (selectedCustomer) {
       // Update
-      const customerDoc = doc(db, 'customers', selectedCustomer.id);
-      await updateDoc(customerDoc, formState);
+      // Fix: use v8 update() syntax.
+      const customerDoc = db.collection('customers').doc(selectedCustomer.id);
+      await customerDoc.update(formState);
     } else {
       // Create
-      await addDoc(collection(db, 'customers'), { ...formState, createdAt: new Date() });
+      // Fix: use v8 add() syntax.
+      await db.collection('customers').add({ ...formState, createdAt: new Date() });
     }
     fetchCustomers();
     handleCloseModal();
@@ -64,7 +69,8 @@ const Customers: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this customer?')) {
-        await deleteDoc(doc(db, 'customers', id));
+        // Fix: use v8 delete() syntax.
+        await db.collection('customers').doc(id).delete();
         fetchCustomers();
     }
   };

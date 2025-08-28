@@ -1,6 +1,7 @@
+
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { Language, Settings } from '../types';
-import { doc, onSnapshot } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 
 interface AppContextType {
@@ -80,8 +81,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     // Listen for settings changes from Firestore
-    const unsub = onSnapshot(doc(db, 'settings', 'main'), (doc) => {
-      if (doc.exists()) {
+    // Fix: Use v8 onSnapshot syntax.
+    const unsub = db.collection('settings').doc('main').onSnapshot((doc) => {
+      if (doc.exists) {
         setSettings(doc.data() as Settings);
       } else {
         setSettings(defaultSettings);

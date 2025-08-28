@@ -1,7 +1,10 @@
 
+
+
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+// Fix: Import firebase for user type, remove v9 modular imports.
+// Fix: Use Firebase v9 compat/app to get User type.
+import firebase from 'firebase/compat/app';
 import { auth, db } from '../services/firebase';
 import { User, UserRole } from '../types';
 import Spinner from '../components/ui/Spinner';
@@ -21,17 +24,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+    // Fix: Use v8 onAuthStateChanged syntax.
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: firebase.User | null) => {
       if (firebaseUser) {
         // User is signed in, get their custom role from Firestore.
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
+        // Fix: Use v8 syntax to get a document from Firestore.
+        const userDocRef = db.collection('users').doc(firebaseUser.uid);
+        const userDoc = await userDocRef.get();
+        if (userDoc.exists) {
           const userData = userDoc.data();
           setCurrentUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            role: userData.role || UserRole.VIEWER, // Default to viewer if role is not set
+            role: userData?.role || UserRole.VIEWER, // Default to viewer if role is not set
           });
         } else {
           // Handle case where user exists in Auth but not in Firestore

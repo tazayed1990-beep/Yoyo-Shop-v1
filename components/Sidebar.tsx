@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
+// Fix: Remove v9 signOut import.
 import { auth } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from '../utils/localization';
@@ -18,7 +19,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      // Fix: Use v8 signOut syntax.
+      await auth.signOut();
       navigate('/login');
     } catch (error) {
       console.error('Error signing out: ', error);

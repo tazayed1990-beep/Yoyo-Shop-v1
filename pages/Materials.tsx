@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+// Fix: Remove v9 firestore imports.
 import { db } from '../services/firebase';
 import { Material, UnitType } from '../types';
 import Button from '../components/ui/Button';
@@ -32,7 +33,8 @@ const Materials: React.FC = () => {
 
   const fetchMaterials = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'materials'));
+    // Fix: use v8 get() syntax.
+    const querySnapshot = await db.collection('materials').get();
     const materialsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Material[];
     setMaterials(materialsData);
     setLoading(false);
@@ -71,10 +73,12 @@ const Materials: React.FC = () => {
     };
 
     if (selectedMaterial) {
-      const materialDoc = doc(db, 'materials', selectedMaterial.id);
-      await updateDoc(materialDoc, dataToSave);
+      // Fix: use v8 update() syntax.
+      const materialDoc = db.collection('materials').doc(selectedMaterial.id);
+      await materialDoc.update(dataToSave);
     } else {
-      await addDoc(collection(db, 'materials'), dataToSave);
+      // Fix: use v8 add() syntax.
+      await db.collection('materials').add(dataToSave);
     }
     fetchMaterials();
     handleCloseModal();
@@ -82,7 +86,8 @@ const Materials: React.FC = () => {
   
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this material?')) {
-        await deleteDoc(doc(db, 'materials', id));
+        // Fix: use v8 delete() syntax.
+        await db.collection('materials').doc(id).delete();
         fetchMaterials();
     }
   };

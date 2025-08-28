@@ -1,5 +1,10 @@
+
+
 import React, { useState } from 'react';
-import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
+// Fix: Use v8 firestore features by importing firebase.
+// Fix: Use Firebase v9 compat libraries to get firestore namespace.
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
 import Card from '../components/ui/Card';
 import { db } from '../services/firebase';
 import { Order, Product, Customer, Material, Expense } from '../types';
@@ -44,23 +49,25 @@ const Reports: React.FC = () => {
     setLoading(true);
     setReportData(null);
 
-    const startDate = Timestamp.fromDate(new Date(filters.startDate));
-    const endDate = Timestamp.fromDate(new Date(filters.endDate + 'T23:59:59'));
+    // Fix: use v8 Timestamp.
+    const startDate = firebase.firestore.Timestamp.fromDate(new Date(filters.startDate));
+    const endDate = firebase.firestore.Timestamp.fromDate(new Date(filters.endDate + 'T23:59:59'));
 
     try {
       // 1. Fetch all necessary data in parallel
       // FIX: Removed `where('isCancelled', '!=', true)` to avoid composite index requirement.
       // Filtering will be done client-side.
-      const ordersQuery = query(
-        collection(db, 'orders'),
-        where('createdAt', '>=', startDate),
-        where('createdAt', '<=', endDate)
-      );
-      const expensesQuery = query(
-        collection(db, 'expenses'),
-        where('date', '>=', startDate),
-        where('date', '<=', endDate)
-      );
+      // Fix: use v8 query syntax.
+      // Fix: Corrected collection path from ('db', 'orders') to ('orders').
+      const ordersQuery = db
+        .collection('orders')
+        .where('createdAt', '>=', startDate)
+        .where('createdAt', '<=', endDate);
+      // Fix: Corrected collection path from ('db', 'expenses') to ('expenses').
+      const expensesQuery = db
+        .collection('expenses')
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate);
 
       const [
         ordersSnapshot, 
@@ -69,14 +76,15 @@ const Reports: React.FC = () => {
         materialsSnapshot, 
         expensesSnapshot
       ] = await Promise.all([
-        getDocs(ordersQuery),
-        getDocs(collection(db, 'customers')),
-        getDocs(collection(db, 'products')),
-        getDocs(collection(db, 'materials')),
-        getDocs(expensesQuery)
+        ordersQuery.get(),
+        db.collection('customers').get(),
+        db.collection('products').get(),
+        db.collection('materials').get(),
+        expensesQuery.get()
       ]);
 
-      const ordersInPeriod = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: (doc.data().createdAt as Timestamp).toDate() }) as Order);
+      // Fix: cast to any to call toDate() on v8 Timestamp.
+      const ordersInPeriod = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: (doc.data().createdAt as any).toDate() }) as Order);
       const filteredOrders = ordersInPeriod.filter(order => !order.isCancelled);
       setAllOrdersInPeriod(filteredOrders);
 
