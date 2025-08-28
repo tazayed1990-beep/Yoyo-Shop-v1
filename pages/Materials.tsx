@@ -53,13 +53,36 @@ const Materials: React.FC = () => {
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    let newFormState = { ...formState, [name]: value };
 
+    // Store old label before any state change for conversion logic
+    const oldLabel = formState.unitLabel;
+
+    const isNumericField = ['pricePerUnit', 'stockQty', 'minQty'].includes(name);
+    const parsedValue = isNumericField ? parseFloat(value) || 0 : value;
+
+    // Create a new state object based on the incoming change
+    let newFormState = { ...formState, [name]: parsedValue };
+
+    // If unitType is changed, we need to reset the unitLabel
     if (name === 'unitType') {
-      // Reset unitLabel if unitType changes
       newFormState.unitLabel = UNIT_LABELS[value as UnitType][0] as 'g' | 'kg' | 'piece';
     }
 
+    // If the unit label itself was changed for a weight-based item, apply conversions
+    if (name === 'unitLabel' && formState.unitType === 'weight') {
+      const newLabel = value;
+
+      if (oldLabel === 'g' && newLabel === 'kg') {
+        newFormState.pricePerUnit = newFormState.pricePerUnit * 1000;
+        newFormState.stockQty = newFormState.stockQty / 1000;
+        newFormState.minQty = (newFormState.minQty || 0) / 1000;
+      } else if (oldLabel === 'kg' && newLabel === 'g') {
+        newFormState.pricePerUnit = newFormState.pricePerUnit / 1000;
+        newFormState.stockQty = newFormState.stockQty * 1000;
+        newFormState.minQty = (newFormState.minQty || 0) * 1000;
+      }
+    }
+    
     setFormState(newFormState);
   };
 
@@ -67,9 +90,7 @@ const Materials: React.FC = () => {
     e.preventDefault();
     const dataToSave = {
         ...formState,
-        pricePerUnit: parseFloat(String(formState.pricePerUnit)),
-        stockQty: parseInt(String(formState.stockQty)),
-        minQty: parseInt(String(formState.minQty || 0)),
+        minQty: formState.minQty || 0,
     };
 
     if (selectedMaterial) {

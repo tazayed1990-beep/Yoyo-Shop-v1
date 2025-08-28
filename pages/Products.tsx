@@ -183,26 +183,33 @@ const Products: React.FC = () => {
             
             <div className="border-t pt-4">
               <h3 className="text-lg font-medium">Materials</h3>
-                {formState.materials.map((pm, index) => (
-                  <div key={index} className="flex items-center space-x-2 mt-2">
-                    <div className="flex-1">
-                      <Select
-                        value={pm.materialId}
-                        onChange={(e) => handleMaterialChange(index, 'materialId', e.target.value)}
-                        options={[{ value: '', label: 'Select Material'}, ...materials.map(m => ({ value: m.id, label: `${m.name} (${m.unitLabel})`}))]}
-                      />
+                {formState.materials.map((pm, index) => {
+                  const material = materials.find(m => m.id === pm.materialId);
+                  return (
+                    <div key={index} className="grid grid-cols-12 gap-2 items-center mt-2">
+                      <div className="col-span-6">
+                        <Select
+                          value={pm.materialId}
+                          onChange={(e) => handleMaterialChange(index, 'materialId', e.target.value)}
+                          options={[{ value: '', label: 'Select Material'}, ...materials.map(m => ({ value: m.id, label: m.name }))]}
+                        />
+                      </div>
+                      <div className="col-span-5 flex items-center">
+                          <Input
+                            type="number"
+                            placeholder="Qty"
+                            value={pm.quantity}
+                            onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value) || 0)}
+                            className="w-full"
+                          />
+                          {material && <span className="ml-2 text-sm text-gray-600 whitespace-nowrap">{material.unitLabel}</span>}
+                      </div>
+                      <div className="col-span-1">
+                          <Button type="button" variant="danger" size="sm" onClick={() => removeMaterialRow(index)}>X</Button>
+                      </div>
                     </div>
-                    <div className="w-1/4">
-                      <Input
-                          type="number"
-                          placeholder="Qty"
-                          value={pm.quantity}
-                          onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <Button type="button" variant="danger" size="sm" onClick={() => removeMaterialRow(index)}>X</Button>
-                  </div>
-                ))}
+                  );
+                })}
               <Button type="button" size="sm" className="mt-2" onClick={addMaterialRow}>+ Add Material</Button>
             </div>
 
