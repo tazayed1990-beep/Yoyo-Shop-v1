@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
-// Fix: Switched to a namespace import for firebase/app to work around module resolution issues that can cause `initializeApp` not to be found.
-import * as firebaseApp from "firebase/app";
+// Fix: Use named import for `initializeApp` as required by Firebase v9+ modular SDK.
+import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -9,13 +9,13 @@ import { getFirestore } from "firebase/firestore";
 // You can get this from your Firebase project settings:
 // Project Settings > General > Your apps > Web app > Firebase SDK snippet > Config
 const firebaseConfig = {
-  apiKey: "AIzaSyC4iQrNjyEmlziJa7Sqgi5r6lDa98OyFak",
-  authDomain: "yoyo-shop-7545c.firebaseapp.com",
-  projectId: "yoyo-shop-7545c",
-  storageBucket: "yoyo-shop-7545c.firebasestorage.app",
-  messagingSenderId: "809013526444",
-  appId: "1:809013526444:web:c40c62d9d62589bf02c409",
-  measurementId: "G-3BN4ST78WM"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  measurementId: "YOUR_MEASUREMENT_ID"
 };
 
 // Runtime check to ensure Firebase config is filled out
@@ -29,7 +29,7 @@ if (firebaseConfig.apiKey === "YOUR_API_KEY" || !firebaseConfig.projectId) {
 
 // Initialize Firebase
 // Fix: Call initializeApp directly as it's a top-level function in the modular SDK.
-const app = firebaseApp.initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
 // Get Firebase services
 const auth = getAuth(app);

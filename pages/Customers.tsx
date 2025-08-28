@@ -13,6 +13,7 @@ const Customers: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formState, setFormState] = useState({ fullName: '', address: '', phoneNumber: '', email: '' });
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchCustomers();
@@ -68,6 +69,11 @@ const Customers: React.FC = () => {
     }
   };
 
+  const filteredCustomers = customers.filter(customer =>
+    customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.phoneNumber.includes(searchTerm)
+  );
+
   if (loading) return <div className="flex justify-center items-center h-full"><Spinner /></div>;
 
   return (
@@ -75,6 +81,16 @@ const Customers: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-semibold text-gray-800">Customers</h1>
         <Button onClick={() => handleOpenModal()}>Add Customer</Button>
+      </div>
+
+      <div className="mb-4">
+        <Input
+          type="text"
+          placeholder="Search by name or phone number..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          aria-label="Search customers"
+        />
       </div>
 
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
@@ -89,7 +105,7 @@ const Customers: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {customers.map(customer => (
+              {filteredCustomers.map(customer => (
                 <tr key={customer.id}>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{customer.fullName}</td>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{customer.phoneNumber}</td>

@@ -4,11 +4,6 @@ import { Invoice, Language } from '../types';
 import { formatCurrency } from '../utils/formatting';
 import { AMIRI_FONT_BASE64 } from './amiriFont';
 
-interface jsPDFWithAutoTable extends jsPDF {
-  autoTable: (options: any) => jsPDF;
-  addFileToVFS: (filename: string, data: string) => jsPDF;
-}
-
 const INVOICE_TERMS = {
     en: {
         invoice: "INVOICE",
@@ -46,7 +41,10 @@ const INVOICE_TERMS = {
 
 
 export const generateInvoicePdf = ({ order, customer, settings, issueDate, language }: Omit<Invoice, 'id' | 'orderId'> & { language: Language }) => {
-    const doc = new jsPDF() as jsPDFWithAutoTable;
+    // FIX: The type definitions for jsPDF and/or jspdf-autotable appear to be faulty,
+    // causing TypeScript to not recognize standard methods. Casting to `any` allows
+    // the code to compile while relying on the runtime availability of the methods.
+    const doc: any = new jsPDF();
     const isArabic = language === 'ar';
     const terms = INVOICE_TERMS[language];
     const pageW = doc.internal.pageSize.getWidth();
