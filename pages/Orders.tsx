@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, deleteDoc, serverTimestamp, writeBatch, increment, WriteBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Order, ProductionStatus, ShippingStatus, Customer, Product, OrderItem } from '../types';
 import { PRODUCTION_STATUSES, SHIPPING_STATUSES } from '../constants';
@@ -17,10 +17,20 @@ const Orders: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [materials, setMaterials] = useState<any[]>([]); // Using any for simplicity with materials map
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const { settings, language } = useApp();
+
+  // State for new order confirmation
+  const [pendingOrder, setPendingOrder] = useState<Omit<Order, 'id' | 'createdAt' | 'updatedAt' | 'customerName' | 'items'> & { items: OrderItem[] } | null>(null);
+  const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+
+  // State for status change confirmation
+  const [pendingStatusChange, setPendingStatusChange] = useState<{order: Order; field: 'productionStatus' | 'shippingStatus'; value: string} | null>(null);
+  const [isStatusChangeModalOpen, setIsStatusChangeModalOpen] = useState(false);
+
 
   const initialFormState: Omit<Order, 'id' | 'createdAt' | 'updatedAt' | 'customerName'> = {
     customerId: '',
@@ -34,6 +44,7 @@ const Orders: React.FC = () => {
     shippingStatus: 'Ready',
     notes: '',
     isCancelled: false,
+    stockDeducted: false,
   };
 
   const [formState, setFormState] = useState(initialFormState);
@@ -59,6 +70,9 @@ const Orders: React.FC = () => {
     const productsQuery = await getDocs(collection(db, 'products'));
     setProducts(productsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
     
+    const materialsQuery = await getDocs(collection(db, 'materials'));
+    setMaterials(materialsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
     setLoading(false);
   };
   
@@ -116,6 +130,19 @@ const Orders: React.FC = () => {
   const removeItem = (index: number) => {
     setFormState(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index)}));
   };
+  
+  const addStockDeductionsToBatch = (batch: WriteBatch, orderData: { items: OrderItem[] }) => {
+    for (const item of orderData.items) {
+      const product = products.find(p => p.id === item.productId);
+      if (product?.materials) {
+        for (const prodMaterial of product.materials) {
+          const materialDocRef = doc(db, 'materials', prodMaterial.materialId);
+          const quantityToDeduct = prodMaterial.quantity * item.qty;
+          batch.update(materialDocRef, { stockQty: increment(-quantityToDeduct) });
+        }
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,16 +155,48 @@ const Orders: React.FC = () => {
     const dataToSave = {
         ...formState,
         customerName: customer.fullName,
-        updatedAt: serverTimestamp(),
     };
 
     if (selectedOrder) {
-      await updateDoc(doc(db, 'orders', selectedOrder.id), dataToSave);
+      await updateDoc(doc(db, 'orders', selectedOrder.id), {...dataToSave, updatedAt: serverTimestamp()});
+      fetchData();
+      handleCloseModal();
     } else {
-      await addDoc(collection(db, 'orders'), {...dataToSave, createdAt: serverTimestamp()});
+      // For new orders, trigger confirmation flow
+      setPendingOrder(dataToSave);
+      setIsNewOrderModalOpen(true);
+      handleCloseModal();
     }
-    fetchData();
-    handleCloseModal();
+  };
+
+  const finalizeNewOrder = async (deductStock: boolean) => {
+    if (!pendingOrder) return;
+
+    try {
+        const data = {
+            ...pendingOrder,
+            stockDeducted: deductStock,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        };
+
+        const newOrderRef = await addDoc(collection(db, 'orders'), data);
+        
+        if (deductStock) {
+            const batch = writeBatch(db);
+            const newOrderData = { ...pendingOrder, id: newOrderRef.id };
+            addStockDeductionsToBatch(batch, newOrderData);
+            await batch.commit();
+        }
+
+    } catch (error) {
+        console.error("Error creating order or deducting stock:", error);
+        alert("Failed to create order. Please try again.");
+    } finally {
+        setIsNewOrderModalOpen(false);
+        setPendingOrder(null);
+        fetchData();
+    }
   };
   
   const handleDelete = async (id: string) => {
@@ -149,15 +208,59 @@ const Orders: React.FC = () => {
 
 
   const handleStatusChange = async (orderId: string, field: 'productionStatus' | 'shippingStatus', value: string) => {
-    const orderDoc = doc(db, 'orders', orderId);
-    await updateDoc(orderDoc, { [field]: value });
-    fetchData();
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    
+    // Check for completion status and if stock hasn't been deducted
+    const isCompletionStatus = value === 'Finished' || value === 'Delivered';
+    if (!order.stockDeducted && isCompletionStatus) {
+        setPendingStatusChange({ order, field, value });
+        setIsStatusChangeModalOpen(true);
+    } else {
+        // Just update status normally
+        const orderDoc = doc(db, 'orders', orderId);
+        await updateDoc(orderDoc, { [field]: value, updatedAt: serverTimestamp() });
+        fetchData();
+    }
   };
+
+  const finalizeStatusChange = async (deductStock: boolean) => {
+    if (!pendingStatusChange) return;
+
+    const { order, field, value } = pendingStatusChange;
+    
+    try {
+        const batch = writeBatch(db);
+        const orderDocRef = doc(db, 'orders', order.id);
+
+        const updates: any = {
+            [field]: value,
+            updatedAt: serverTimestamp()
+        };
+
+        if (deductStock) {
+            addStockDeductionsToBatch(batch, order);
+            updates.stockDeducted = true;
+        }
+
+        batch.update(orderDocRef, updates);
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error updating status or deducting stock:", error);
+        alert("Failed to update order status. Please try again.");
+    } finally {
+        setIsStatusChangeModalOpen(false);
+        setPendingStatusChange(null);
+        fetchData();
+    }
+  };
+
 
   const handleCancelOrder = async (orderId: string) => {
     if (window.confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
         const orderDoc = doc(db, 'orders', orderId);
-        await updateDoc(orderDoc, { isCancelled: true });
+        await updateDoc(orderDoc, { isCancelled: true, updatedAt: serverTimestamp() });
         fetchData();
     }
   };
@@ -190,6 +293,7 @@ const Orders: React.FC = () => {
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Total</th>
+                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Stock Status</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Production Status</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Shipping Status</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100"></th>
@@ -202,6 +306,17 @@ const Orders: React.FC = () => {
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{order.customerName}</td>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{order.createdAt.toLocaleDateString()}</td>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{formatCurrency(order.total)}</td>
+                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">
+                    {order.stockDeducted ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Deducted
+                      </span>
+                    ) : (
+                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                        Pending
+                      </span>
+                    )}
+                  </td>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">
                     <Select 
                       value={order.productionStatus}
@@ -284,6 +399,31 @@ const Orders: React.FC = () => {
         </form>
       </Modal>
 
+      {/* Confirmation Modal for New Order */}
+      <Modal 
+        isOpen={isNewOrderModalOpen} 
+        onClose={() => setIsNewOrderModalOpen(false)}
+        title="Confirm New Order"
+      >
+        <p className="mb-4">A new order is ready to be created. Do you want to deduct the required material stock now?</p>
+        <div className="flex justify-end space-x-2">
+          <Button variant="secondary" onClick={() => finalizeNewOrder(false)}>Create Without Deducting</Button>
+          <Button variant="primary" onClick={() => finalizeNewOrder(true)}>Create & Deduct Stock</Button>
+        </div>
+      </Modal>
+
+      {/* Confirmation Modal for Status Change */}
+      <Modal 
+        isOpen={isStatusChangeModalOpen} 
+        onClose={() => setIsStatusChangeModalOpen(false)}
+        title="Confirm Stock Deduction"
+      >
+        <p className="mb-4">This order is being marked as complete, but stock has not been deducted. Deduct materials from inventory now?</p>
+        <div className="flex justify-end space-x-2">
+          <Button variant="secondary" onClick={() => finalizeStatusChange(false)}>Update Status Only</Button>
+          <Button variant="primary" onClick={() => finalizeStatusChange(true)}>Update Status & Deduct Stock</Button>
+        </div>
+      </Modal>
     </div>
   );
 };

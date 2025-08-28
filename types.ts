@@ -81,6 +81,7 @@ export interface Order {
   shippingStatus: ShippingStatus;
   notes?: string;
   isCancelled: boolean;
+  stockDeducted?: boolean;
   createdAt: any;
   updatedAt: any;
 }
