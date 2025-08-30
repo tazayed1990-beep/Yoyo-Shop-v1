@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 // Fix: Remove v9 firestore imports.
-import { db } from '../services/firebase';
+import { db, logActivity } from '../services/firebase';
 import { Material, UnitType } from '../types';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -10,12 +10,15 @@ import Spinner from '../components/ui/Spinner';
 import Select from '../components/ui/Select';
 import { UNIT_TYPES, UNIT_LABELS } from '../constants';
 import { formatCurrency } from '../utils/formatting';
+import { useAuth } from '../hooks/useAuth';
 
 const Materials: React.FC = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const { currentUser } = useAuth();
   
   const initialFormState: Omit<Material, 'id'> = {
     name: '',
@@ -97,21 +100,29 @@ const Materials: React.FC = () => {
       // Fix: use v8 update() syntax.
       const materialDoc = db.collection('materials').doc(selectedMaterial.id);
       await materialDoc.update(dataToSave);
+      await logActivity(currentUser?.email, 'Update Material', `Updated material: ${dataToSave.name}`);
     } else {
       // Fix: use v8 add() syntax.
       await db.collection('materials').add(dataToSave);
+      await logActivity(currentUser?.email, 'Create Material', `Created new material: ${dataToSave.name}`);
     }
     fetchMaterials();
     handleCloseModal();
   };
   
   const handleDelete = async (id: string) => {
+    const materialToDelete = materials.find(m => m.id === id);
     if (window.confirm('Are you sure you want to delete this material?')) {
         // Fix: use v8 delete() syntax.
         await db.collection('materials').doc(id).delete();
+        await logActivity(currentUser?.email, 'Delete Material', `Deleted material: ${materialToDelete?.name || `ID: ${id}`}`);
         fetchMaterials();
     }
   };
+
+  const filteredMaterials = materials.filter(material =>
+    material.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   if (loading) return <div className="flex justify-center items-center h-full"><Spinner /></div>;
 
@@ -120,6 +131,16 @@ const Materials: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-semibold text-gray-800">Materials (خامات)</h1>
         <Button onClick={() => handleOpenModal()}>Add Material</Button>
+      </div>
+      
+      <div className="mb-4">
+        <Input
+          type="text"
+          placeholder="Search materials by name..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          aria-label="Search materials"
+        />
       </div>
 
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
@@ -134,7 +155,7 @@ const Materials: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {materials.map(material => {
+              {filteredMaterials.map(material => {
                   const isLowStock = material.minQty ? material.stockQty <= material.minQty : false;
                   return (
                     <tr key={material.id}>

@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 // Fix: Use Firebase v9 compat libraries to get firestore namespace.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { db } from '../services/firebase';
+import { db, logActivity } from '../services/firebase';
 import { User, UserRole } from '../types';
 import Spinner from '../components/ui/Spinner';
 import Select from '../components/ui/Select';
@@ -14,12 +14,14 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import { useTranslation } from '../utils/localization';
+import { useAuth } from '../hooks/useAuth';
 
 const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
   
   const initialFormState = {
       uid: '',
@@ -65,6 +67,7 @@ const Users: React.FC = () => {
             role: formState.role,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
+        await logActivity(currentUser?.email, 'Create User', `Created user record for ${formState.email} with role ${formState.role}`);
         fetchUsers();
         handleCloseModal();
     } catch (error) {
@@ -74,10 +77,12 @@ const Users: React.FC = () => {
   };
   
   const handleRoleChange = async (uid: string, role: UserRole) => {
+    const user = users.find(u => u.uid === uid);
     try {
         // Fix: use v8 update() syntax.
         const userDoc = db.collection('users').doc(uid);
         await userDoc.update({ role });
+        await logActivity(currentUser?.email, 'Update User Role', `Changed role for ${user?.email} from ${user?.role} to ${role}`);
         // Optimistically update UI
         setUsers(users.map(u => u.uid === uid ? { ...u, role } : u));
     } catch (error) {

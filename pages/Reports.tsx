@@ -1,6 +1,7 @@
 
-
 import React, { useState } from 'react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 // Fix: Use v8 firestore features by importing firebase.
 // Fix: Use Firebase v9 compat libraries to get firestore namespace.
 import firebase from 'firebase/compat/app';
@@ -21,7 +22,7 @@ interface ReportData {
   customers: Customer[];
   totalMaterialCost: number;
   materialsUsed: { name: string; quantity: number; unitLabel: string }[];
-  totalExpenses: number;
+  totalOperationalExpenses: number;
   profit: number;
 }
 
@@ -148,10 +149,10 @@ const Reports: React.FC = () => {
       });
 
       // Expenses
-      const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const totalOperationalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
       // Profit
-      const profit = totalRevenue - totalMaterialCost - totalExpenses;
+      const profit = totalRevenue - totalMaterialCost - totalOperationalExpenses;
 
       setReportData({
         totalOrders: filteredOrders.length,
@@ -160,7 +161,7 @@ const Reports: React.FC = () => {
         customers: customerReport,
         totalMaterialCost,
         materialsUsed: materialsUsedReport,
-        totalExpenses,
+        totalOperationalExpenses,
         profit,
       });
 
@@ -178,6 +179,133 @@ const Reports: React.FC = () => {
     setIsCustomerModalOpen(true);
   };
   
+  const handleExportCSV = () => {
+    if (!reportData || !filters.startDate || !filters.endDate) return;
+
+    const escapeCsvCell = (cell: any) => {
+        const cellStr = String(cell ?? '').replace(/"/g, '""');
+        return `"${cellStr}"`;
+    };
+
+    const csvRows: string[] = [];
+
+    // Header
+    csvRows.push('Yoyo Shop Report');
+    csvRows.push(`Dates:,${filters.startDate} to ${filters.endDate}`);
+    csvRows.push(''); // Blank line
+
+    // Sales & Profit Summary
+    csvRows.push('Sales & Profit Summary');
+    csvRows.push('Metric,Value');
+    csvRows.push(`Total Revenue,${escapeCsvCell(formatCurrency(reportData.totalRevenue))}`);
+    csvRows.push(`Total Orders,${reportData.totalOrders}`);
+    csvRows.push(`Total Products Sold,${reportData.totalProductsSold}`);
+    csvRows.push(`Total Material Costs,${escapeCsvCell(formatCurrency(reportData.totalMaterialCost))}`);
+    csvRows.push(`Total Other Expenses,${escapeCsvCell(formatCurrency(reportData.totalOperationalExpenses))}`);
+    csvRows.push(`Net Profit / Loss,${escapeCsvCell(formatCurrency(reportData.profit))}`);
+    csvRows.push(''); // Blank line
+
+    // Customer Report
+    csvRows.push('Customer Report');
+    csvRows.push('Customer Name,Phone Number,Email,Orders,Total Spent');
+    reportData.customers.forEach(customer => {
+        const row = [
+            customer.fullName,
+            customer.phoneNumber,
+            customer.email || '',
+            customer.orderCount || 0,
+            formatCurrency(customer.totalSpent || 0)
+        ].map(escapeCsvCell).join(',');
+        csvRows.push(row);
+    });
+    csvRows.push(''); // Blank line
+
+    // Materials Usage Report
+    csvRows.push('Materials Usage Report');
+    csvRows.push('Material Name,Total Quantity Used');
+    reportData.materialsUsed.forEach(material => {
+        const row = [
+            material.name,
+            `${material.quantity.toFixed(2)} ${material.unitLabel}`
+        ].map(escapeCsvCell).join(',');
+        csvRows.push(row);
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `report_${filters.startDate}_to_${filters.endDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+  };
+  
+  const handleExportPDF = () => {
+    if (!reportData || !filters.startDate || !filters.endDate) return;
+
+    const doc: any = new jsPDF();
+    const today = new Date().toLocaleDateString();
+    const reportPeriod = `${filters.startDate} to ${filters.endDate}`;
+    const finalY = (doc as any).lastAutoTable.finalY || 0;
+
+    // Header
+    doc.setFontSize(18);
+    doc.text('Yoyo Shop - Financial Report', 14, 22);
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Report Period: ${reportPeriod}`, 14, 30);
+    doc.text(`Generated On: ${today}`, 14, 36);
+
+    // Sales & Profit Summary using autoTable
+    doc.autoTable({
+        startY: 45,
+        head: [['Sales & Profit Summary', '']],
+        body: [
+            ['Total Revenue', formatCurrency(reportData.totalRevenue)],
+            ['Total Material Costs', formatCurrency(reportData.totalMaterialCost)],
+            ['Total Other Expenses', formatCurrency(reportData.totalOperationalExpenses)],
+            [{ content: 'Net Profit / Loss', styles: { fontStyle: 'bold' } }, { content: formatCurrency(reportData.profit), styles: { fontStyle: 'bold' } }],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [31, 41, 55] }
+    });
+
+    // Customer Report
+    doc.autoTable({
+        startY: (doc as any).lastAutoTable.finalY + 15,
+        head: [['Active Customers', 'Orders', 'Total Spent']],
+        body: reportData.customers.map(c => [c.fullName, c.orderCount, formatCurrency(c.totalSpent ?? 0)]),
+        theme: 'striped',
+        headStyles: { fillColor: [31, 41, 55] },
+        didDrawPage: (data: any) => {
+            doc.setFontSize(12);
+            doc.text('Customer Report', data.settings.margin.left, (doc as any).lastAutoTable.finalY + 10);
+        }
+    });
+
+    // Materials Usage
+    doc.autoTable({
+        startY: (doc as any).lastAutoTable.finalY + 15,
+        head: [['Material Name', 'Total Quantity Used']],
+        body: reportData.materialsUsed.sort((a,b) => a.name.localeCompare(b.name)).map(m => [m.name, `${m.quantity.toFixed(2)} ${m.unitLabel}`]),
+        theme: 'striped',
+        headStyles: { fillColor: [31, 41, 55] },
+         didDrawPage: (data: any) => {
+            doc.setFontSize(12);
+            doc.text('Materials Usage Report', data.settings.margin.left, (doc as any).lastAutoTable.finalY + 10);
+        }
+    });
+
+    doc.save(`report_${filters.startDate}_to_${filters.endDate}.pdf`);
+};
+
+
+
   return (
     <div>
         <h1 className="text-3xl font-semibold text-gray-800 mb-6">Reports</h1>
@@ -186,8 +314,10 @@ const Reports: React.FC = () => {
             <div className="flex flex-col md:flex-row gap-4 items-center">
                 <Input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} label="Start Date" />
                 <Input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} label="End Date" />
-                <div className="pt-5">
+                <div className="pt-5 flex gap-2">
                     <Button onClick={generateReport} disabled={loading}>{loading ? 'Generating...' : 'Generate Report'}</Button>
+                    <Button onClick={handleExportPDF} disabled={!reportData} variant="secondary">Export PDF</Button>
+                    <Button onClick={handleExportCSV} disabled={!reportData} variant="secondary">Export CSV</Button>
                 </div>
             </div>
         </Card>
@@ -227,12 +357,8 @@ const Reports: React.FC = () => {
                                 <span className="font-bold text-green-600">{formatCurrency(reportData.totalRevenue)}</span>
                             </div>
                              <div className="flex justify-between">
-                                <span className="text-red-600">(-) Total Material Costs</span>
-                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalMaterialCost)}</span>
-                            </div>
-                             <div className="flex justify-between">
-                                <span className="text-red-600">(-) Total Expenses</span>
-                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalExpenses)}</span>
+                                <span className="text-red-600">(-) Total Costs (Materials + Expenses)</span>
+                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalMaterialCost + reportData.totalOperationalExpenses)}</span>
                             </div>
                             <div className={`flex justify-between border-t pt-2 mt-2 ${reportData.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                 <span className="font-bold text-lg">Net Profit / Loss</span>

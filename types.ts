@@ -11,6 +11,8 @@ export interface User {
   name?: string;
   role: UserRole;
   createdAt?: any;
+  referralCode?: string;
+  referredById?: string;
 }
 
 // Customer Types
@@ -24,6 +26,9 @@ export interface Customer {
   // Added for reporting
   orderCount?: number;
   totalSpent?: number;
+  // Added for sales tracking
+  referredById?: string;
+  referredByName?: string;
 }
 
 // Material and Product Types
@@ -84,6 +89,8 @@ export interface Order {
   stockDeducted?: boolean;
   createdAt: any;
   updatedAt: any;
+  salespersonId?: string;
+  salespersonName?: string;
 }
 
 export interface Invoice {
@@ -100,6 +107,7 @@ export interface Settings {
     companyName: string;
     companyAddress: string;
     companyPhone: string;
+    commissionRate?: number;
 }
 
 export type Language = 'en' | 'ar';
@@ -123,4 +131,27 @@ export interface DashboardStats {
   totalMaterialCost: number;
   totalExpenses: number;
   netProfit: number;
+}
+
+// Reward System Types
+export type RewardType = 'customerCount' | 'salesVolume';
+
+export interface Reward {
+  id: string;
+  name: string;
+  type: RewardType;
+  target: number; // e.g., 10 customers or 50000 in sales
+  rewardAmount: number;
+  timeframeDays: number; // e.g., 30 for a monthly goal
+  isActive: boolean;
+}
+
+export interface EarnedReward {
+  id: string;
+  rewardId: string;
+  rewardName: string;
+  salespersonId: string;
+  salespersonName: string;
+  dateEarned: any; // Firestore Timestamp
+  amount: number;
 }

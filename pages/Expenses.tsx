@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 // Fix: Use Firebase v9 compat libraries to get firestore namespace.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { db } from '../services/firebase';
+import { db, logActivity } from '../services/firebase';
 import { Expense } from '../types';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -14,6 +14,7 @@ import Spinner from '../components/ui/Spinner';
 import { useTranslation } from '../utils/localization';
 import { EXPENSE_CATEGORIES } from '../constants';
 import { formatCurrency } from '../utils/formatting';
+import { useAuth } from '../hooks/useAuth';
 
 const Expenses: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -21,6 +22,7 @@ const Expenses: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
 
   const initialFormState = {
     name: '',
@@ -86,9 +88,11 @@ const Expenses: React.FC = () => {
         if (selectedExpense) {
             // Fix: use v8 update() syntax.
             await db.collection('expenses').doc(selectedExpense.id).update(dataToSave);
+            await logActivity(currentUser?.email, 'Update Expense', `Updated expense: ${dataToSave.name} (${formatCurrency(dataToSave.amount)})`);
         } else {
             // Fix: use v8 add() and serverTimestamp() syntax.
             await db.collection('expenses').add({ ...dataToSave, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+             await logActivity(currentUser?.email, 'Create Expense', `Created expense: ${dataToSave.name} (${formatCurrency(dataToSave.amount)})`);
         }
         handleCloseModal();
     } catch (error) {
@@ -98,9 +102,11 @@ const Expenses: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    const expenseToDelete = expenses.find(ex => ex.id === id);
     if (window.confirm('Are you sure you want to delete this expense?')) {
         // Fix: use v8 delete() syntax.
         await db.collection('expenses').doc(id).delete();
+        await logActivity(currentUser?.email, 'Delete Expense', `Deleted expense: ${expenseToDelete?.name || `ID: ${id}`} (${formatCurrency(expenseToDelete?.amount || 0)})`);
     }
   };
 

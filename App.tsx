@@ -14,6 +14,8 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
+import Sales from './pages/Sales';
+import Rewards from './pages/Rewards';
 import { UserRole } from './types';
 
 function App() {
@@ -33,6 +35,11 @@ function App() {
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
+              <Route path="sales" element={
+                <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.STAFF]}>
+                  <Sales />
+                </ProtectedRoute>
+              } />
               <Route path="customers" element={
                  <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.STAFF]}>
                   <Customers />
@@ -61,6 +68,11 @@ function App() {
               <Route path="reports" element={
                 <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
                   <Reports />
+                </ProtectedRoute>
+              } />
+              <Route path="rewards" element={
+                 <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+                  <Rewards />
                 </ProtectedRoute>
               } />
               <Route path="users" element={

@@ -28,4 +28,29 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const analytics = firebase.analytics();
 
+/**
+ * Logs a user activity to the 'activityLog' collection in Firestore.
+ * @param userEmail - The email of the user performing the action.
+ * @param action - A short description of the action type (e.g., 'Create Product').
+ * @param details - A more detailed description of the action (e.g., 'Created new product: Wooden Yoyo').
+ */
+export const logActivity = async (userEmail: string | null | undefined, action: string, details: string) => {
+  if (!userEmail) {
+    console.warn('Activity log attempted without a user. Logging as "system".');
+    userEmail = 'system';
+  }
+
+  try {
+    await db.collection('activityLog').add({
+      user: userEmail,
+      action: action,
+      details: details,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Error logging activity:", error);
+    // Fail silently in the UI, but log the error.
+  }
+};
+
 export { app, auth, db, analytics };

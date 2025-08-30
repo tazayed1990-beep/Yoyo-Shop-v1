@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 // Fix: Remove v9 firestore imports.
-import { db } from '../services/firebase';
+import { db, logActivity } from '../services/firebase';
 import { Product, Material, ProductMaterial } from '../types';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -9,6 +9,7 @@ import Input from '../components/ui/Input';
 import Spinner from '../components/ui/Spinner';
 import Select from '../components/ui/Select';
 import { formatCurrency } from '../utils/formatting';
+import { useAuth } from '../hooks/useAuth';
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -16,6 +17,7 @@ const Products: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const { currentUser } = useAuth();
   
   const initialFormState = {
     name: '',
@@ -122,18 +124,22 @@ const Products: React.FC = () => {
       // Fix: Use v8 update() syntax.
       const productDoc = db.collection('products').doc(selectedProduct.id);
       await productDoc.update(dataToSave);
+      await logActivity(currentUser?.email, 'Update Product', `Updated product: ${dataToSave.name}`);
     } else {
       // Fix: Use v8 add() syntax.
       await db.collection('products').add(dataToSave);
+      await logActivity(currentUser?.email, 'Create Product', `Created new product: ${dataToSave.name}`);
     }
     fetchData();
     handleCloseModal();
   };
   
   const handleDelete = async (id: string) => {
+    const productToDelete = products.find(p => p.id === id);
     if (window.confirm('Are you sure you want to delete this product?')) {
         // Fix: Use v8 delete() syntax.
         await db.collection('products').doc(id).delete();
+        await logActivity(currentUser?.email, 'Delete Product', `Deleted product: ${productToDelete?.name || `ID: ${id}`}`);
         fetchData();
     }
   };
@@ -176,56 +182,56 @@ const Products: React.FC = () => {
       </div>
 
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={selectedProduct ? 'Edit Product' : 'Add Product'}>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <Input label="Product Name" name="name" value={formState.name} onChange={handleFormChange} required />
-            <textarea name="description" value={formState.description} onChange={handleFormChange} placeholder="Description" className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm" />
-            
-            <div className="border-t pt-4">
-              <h3 className="text-lg font-medium">Materials</h3>
-                {formState.materials.map((pm, index) => {
-                  const material = materials.find(m => m.id === pm.materialId);
-                  return (
-                    <div key={index} className="grid grid-cols-12 gap-2 items-center mt-2">
-                      <div className="col-span-6">
-                        <Select
-                          value={pm.materialId}
-                          onChange={(e) => handleMaterialChange(index, 'materialId', e.target.value)}
-                          options={[{ value: '', label: 'Select Material'}, ...materials.map(m => ({ value: m.id, label: m.name }))]}
-                        />
-                      </div>
-                      <div className="col-span-5 flex items-center">
-                          <Input
-                            type="number"
-                            placeholder="Qty"
-                            value={pm.quantity}
-                            onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full"
-                          />
-                          {material && <span className="ml-2 text-sm text-gray-600 whitespace-nowrap">{material.unitLabel}</span>}
-                      </div>
-                      <div className="col-span-1">
-                          <Button type="button" variant="danger" size="sm" onClick={() => removeMaterialRow(index)}>X</Button>
-                      </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input label="Product Name" name="name" value={formState.name} onChange={handleFormChange} required />
+          <textarea name="description" value={formState.description} onChange={handleFormChange} placeholder="Description" className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm" />
+          
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-medium mb-2">Materials</h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto border p-2 rounded-md">
+              {formState.materials.map((pm, index) => {
+                const material = materials.find(m => m.id === pm.materialId);
+                return (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-6">
+                      <Select
+                        value={pm.materialId}
+                        onChange={(e) => handleMaterialChange(index, 'materialId', e.target.value)}
+                        options={[{ value: '', label: 'Select Material'}, ...materials.map(m => ({ value: m.id, label: m.name }))]}
+                      />
                     </div>
-                  );
-                })}
-              <Button type="button" size="sm" className="mt-2" onClick={addMaterialRow}>+ Add Material</Button>
+                    <div className="col-span-5 flex items-center">
+                        <Input
+                          type="number"
+                          placeholder="Qty"
+                          value={pm.quantity}
+                          onChange={(e) => handleMaterialChange(index, 'quantity', parseFloat(e.target.value) || 0)}
+                          className="w-full"
+                        />
+                        {material && <span className="ml-2 text-sm text-gray-600 whitespace-nowrap">{material.unitLabel}</span>}
+                    </div>
+                    <div className="col-span-1">
+                        <Button type="button" variant="danger" size="sm" onClick={() => removeMaterialRow(index)}>X</Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            <div>
-                <p>
-                    Calculated Materials Cost: <span className="font-bold">{formatCurrency(formState.materialsCost)}</span>
-                    {selectedProduct && selectedProduct.materialsCost.toFixed(2) !== formState.materialsCost.toFixed(2) && (
-                        <span className="text-sm text-orange-600 ml-2 animate-pulse">
-                            (was {formatCurrency(selectedProduct.materialsCost)})
-                        </span>
-                    )}
-                </p>
-            </div>
-            <Input label="Final Selling Price" name="price" type="number" step="0.01" value={formState.price} onChange={handleFormChange} required />
-
+            <Button type="button" size="sm" className="mt-2" onClick={addMaterialRow}>+ Add Material</Button>
           </div>
+
+          <div>
+              <p>
+                  Calculated Materials Cost: <span className="font-bold">{formatCurrency(formState.materialsCost)}</span>
+                  {selectedProduct && selectedProduct.materialsCost.toFixed(2) !== formState.materialsCost.toFixed(2) && (
+                      <span className="text-sm text-orange-600 ml-2 animate-pulse">
+                          (was {formatCurrency(selectedProduct.materialsCost)})
+                      </span>
+                  )}
+              </p>
+          </div>
+          <Input label="Final Selling Price" name="price" type="number" step="0.01" value={formState.price} onChange={handleFormChange} required />
+
           <div className="mt-6 flex justify-end space-x-2">
             <Button type="button" variant="secondary" onClick={handleCloseModal}>Cancel</Button>
             <Button type="submit">Save</Button>

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 // Fix: Remove v9 signOut import.
@@ -58,6 +57,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
               </NavLink>
               {(currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.STAFF) && (
                 <>
+                  <NavLink to="/sales" className={navLinkClasses}>
+                      <span className="mx-4 font-medium">My Sales</span>
+                  </NavLink>
                   <NavLink to="/orders" className={navLinkClasses}>
                       <span className="mx-4 font-medium">{t('orders')}</span>
                   </NavLink>
@@ -79,6 +81,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
                   </NavLink>
                   <NavLink to="/reports" className={navLinkClasses}>
                       <span className="mx-4 font-medium">{t('reports')}</span>
+                  </NavLink>
+                   <NavLink to="/rewards" className={navLinkClasses}>
+                      <span className="mx-4 font-medium">Rewards</span>
                   </NavLink>
                   <NavLink to="/users" className={navLinkClasses}>
                       <span className="mx-4 font-medium">{t('users')}</span>
