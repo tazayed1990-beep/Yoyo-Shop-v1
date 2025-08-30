@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { db, logActivity } from '../services/firebase';
-import { Order, ProductionStatus, ShippingStatus, Customer, Product, OrderItem, Material } from '../types';
+import { Order, ProductionStatus, ShippingStatus, Customer, Product, OrderItem, Material, User, UserRole } from '../types';
 import { PRODUCTION_STATUSES, SHIPPING_STATUSES } from '../constants';
 import Button from '../components/ui/Button';
 import Spinner from '../components/ui/Spinner';
@@ -22,6 +22,7 @@ const Orders: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -61,28 +62,27 @@ const Orders: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    // Fix: use v8 get() syntax.
-    const ordersQuery = await db.collection('orders').get();
-    const ordersData = ordersQuery.docs.map(doc => ({
+
+    const [ordersSnap, customersSnap, productsSnap, materialsSnap, usersSnap] = await Promise.all([
+        db.collection('orders').get(),
+        db.collection('customers').get(),
+        db.collection('products').get(),
+        db.collection('materials').get(),
+        db.collection('users').get(),
+    ]);
+
+    const ordersData = ordersSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      // Fix: Cast to any to call toDate() on v8 Timestamp.
       createdAt: (doc.data().createdAt as any)?.toDate(),
       updatedAt: (doc.data().updatedAt as any)?.toDate(),
     })) as Order[];
     setOrders(ordersData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
 
-    // Fix: use v8 get() syntax.
-    const customersQuery = await db.collection('customers').get();
-    setCustomers(customersQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
-    
-    // Fix: use v8 get() syntax.
-    const productsQuery = await db.collection('products').get();
-    setProducts(productsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    
-    // Fix: use v8 get() syntax.
-    const materialsQuery = await db.collection('materials').get();
-    setMaterials(materialsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Material)));
+    setCustomers(customersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
+    setProducts(productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    setMaterials(materialsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Material)));
+    setUsers(usersSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() }) as User));
 
     setLoading(false);
   };
@@ -109,7 +109,17 @@ const Orders: React.FC = () => {
     const { name, value, type } = e.target;
     const isCheckbox = type === 'checkbox';
     const val = isCheckbox ? (e.target as HTMLInputElement).checked : value;
-    setFormState(prev => ({ ...prev, [name]: val }));
+    
+    if (name === 'salespersonId') {
+        const selectedUser = users.find(u => u.uid === value);
+        setFormState(prev => ({
+            ...prev,
+            salespersonId: selectedUser?.uid,
+            salespersonName: selectedUser?.name || selectedUser?.email,
+        }));
+    } else {
+        setFormState(prev => ({ ...prev, [name]: val }));
+    }
   };
 
   const handleItemChange = (index: number, field: keyof OrderItem, value: any) => {
@@ -194,9 +204,9 @@ const Orders: React.FC = () => {
     const dataToSave = {
       ...formState,
       customerName: customer.fullName,
-      // If new order, assign current user. If editing, keep original salesperson.
-      salespersonId: selectedOrder?.salespersonId || currentUser?.uid,
-      salespersonName: selectedOrder?.salespersonName || currentUser?.name || currentUser?.email || 'N/A',
+      // If new order, assign current user. If editing, keep original salesperson unless changed.
+      salespersonId: selectedOrder?.salespersonId ? (formState.salespersonId || selectedOrder.salespersonId) : (currentUser?.uid),
+      salespersonName: selectedOrder?.salespersonName ? (formState.salespersonName || selectedOrder.salespersonName) : (currentUser?.name || currentUser?.email || 'N/A'),
     };
 
     if (selectedOrder) {
@@ -385,6 +395,8 @@ const Orders: React.FC = () => {
             return 'bg-gray-100 text-gray-800';
     }
   };
+  
+  const salespersons = useMemo(() => users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.STAFF), [users]);
 
 
   if (loading) return <div className="flex justify-center items-center h-full"><Spinner /></div>;
@@ -460,6 +472,19 @@ const Orders: React.FC = () => {
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
             <Select label="Customer" name="customerId" value={formState.customerId} onChange={handleFormChange} options={[{value: '', label: 'Select Customer'}, ...customers.map(c => ({value: c.id, label: c.fullName}))]} required />
             
+            {selectedOrder && currentUser?.role === UserRole.ADMIN && (
+                <Select
+                    label="Reassign Salesperson"
+                    name="salespersonId"
+                    value={formState.salespersonId || ''}
+                    onChange={handleFormChange}
+                    options={[
+                        { value: '', label: 'Select Salesperson'},
+                        ...salespersons.map(s => ({ value: s.uid, label: s.name || s.email || 'N/A' }))
+                    ]}
+                />
+            )}
+
             <div className="border-t pt-4">
               <h3 className="font-medium mb-2">Items</h3>
               <div className="space-y-3">

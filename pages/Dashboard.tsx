@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -32,13 +31,10 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     setLoading(true);
 
-    // Fix: Use v8 query syntax.
     const ordersQuery = db.collection('orders');
-    // Fix: Use v8 collection reference syntax.
     const customersQuery = db.collection('customers');
     const expensesQuery = db.collection('expenses');
     
-    // Combined listener for all data sources
     const unsubOrders = ordersQuery.onSnapshot((ordersSnapshot) => {
       const allOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       const orders = allOrders.filter(o => !o.isCancelled);
@@ -50,6 +46,15 @@ const Dashboard: React.FC = () => {
         return sum + order.items.reduce((itemSum, item) => itemSum + (item.materialsCost * item.qty), 0);
       }, 0);
 
+      // New Stats Calculations
+      const shippedAndPaidOrders = orders.filter(o => o.shippingStatus === 'Delivered' && o.total <= o.depositAmount);
+      const shippedAndPaidCount = shippedAndPaidOrders.length;
+      const shippedAndPaidValue = shippedAndPaidOrders.reduce((sum, o) => sum + o.total, 0);
+
+      const readyUnpaidOrders = orders.filter(o => o.productionStatus === 'Finished' && o.shippingStatus !== 'Delivered' && o.total > o.depositAmount);
+      const readyUnpaidCount = readyUnpaidOrders.length;
+      const readyUnpaidValue = readyUnpaidOrders.reduce((sum, o) => sum + o.total, 0);
+
       setStats(prev => ({
           ...prev,
           totalOrders: orders.length,
@@ -57,6 +62,10 @@ const Dashboard: React.FC = () => {
           totalDeposits,
           depositOrdersCount: depositOrders.length,
           totalMaterialCost,
+          shippedAndPaidCount,
+          shippedAndPaidValue,
+          readyUnpaidCount,
+          readyUnpaidValue,
       } as DashboardStats));
 
       // Top Customers
@@ -128,21 +137,20 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const processMonthlyData = (orders: Order[], expenses: Expense[]) => {
-    const data: { [month: string]: { revenue: number, materialCost: number, expenses: number } } = {};
+    const data: { [month: string]: { revenue: number, expenses: number } } = {};
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     orders.forEach(order => {
-        const date = (order.createdAt as any).toDate(); // Assuming createdAt is a Firestore timestamp
+        const date = (order.createdAt as any).toDate();
         const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-        if (!data[monthKey]) data[monthKey] = { revenue: 0, materialCost: 0, expenses: 0 };
+        if (!data[monthKey]) data[monthKey] = { revenue: 0, expenses: 0 };
         data[monthKey].revenue += order.total;
-        data[monthKey].materialCost += order.items.reduce((sum, item) => sum + (item.materialsCost * item.qty), 0);
     });
 
     expenses.forEach(expense => {
-        const date = (expense.date as any).toDate(); // Assuming date is a Firestore timestamp
+        const date = (expense.date as any).toDate();
         const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-        if (!data[monthKey]) data[monthKey] = { revenue: 0, materialCost: 0, expenses: 0 };
+        if (!data[monthKey]) data[monthKey] = { revenue: 0, expenses: 0 };
         data[monthKey].expenses += expense.amount;
     });
     
@@ -153,14 +161,14 @@ const Dashboard: React.FC = () => {
         return monthA - monthB;
     });
 
-    const finalChartData = sortedKeys.slice(-6).map(key => { // Get last 6 months of data
+    const finalChartData = sortedKeys.slice(-6).map(key => {
         const [year, month] = key.split('-');
-        const { revenue, materialCost, expenses } = data[key];
+        const { revenue, expenses } = data[key];
         return {
             name: `${months[parseInt(month, 10)]} '${String(year).slice(2)}`,
             Revenue: revenue,
-            Costs: materialCost + expenses,
-            Profit: revenue - materialCost - expenses,
+            Costs: expenses,
+            Profit: revenue - expenses,
         };
     });
 
@@ -169,12 +177,12 @@ const Dashboard: React.FC = () => {
 
 
   useEffect(() => {
-      if (stats && stats.totalRevenue !== undefined && stats.totalMaterialCost !== undefined && stats.totalExpenses !== undefined) {
-          const netProfit = stats.totalRevenue - stats.totalMaterialCost - stats.totalExpenses;
+      if (stats && stats.totalRevenue !== undefined && stats.totalExpenses !== undefined) {
+          const netProfit = stats.totalRevenue - stats.totalExpenses;
           setStats(prev => ({ ...prev, netProfit } as DashboardStats));
           setLoading(false);
       }
-  }, [stats?.totalRevenue, stats?.totalMaterialCost, stats?.totalExpenses]);
+  }, [stats?.totalRevenue, stats?.totalExpenses]);
 
   if (loading || !stats) {
     return (
@@ -188,13 +196,13 @@ const Dashboard: React.FC = () => {
 
 
   return (
-    <div>
-      <h1 className="text-3xl font-semibold text-gray-800 mb-6">Dashboard</h1>
+    <div className="space-y-8">
+      <h1 className="text-3xl font-semibold text-gray-800">Dashboard</h1>
       
       <>
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-6">
-          <Link to="/orders" className="lg:col-span-1 xl:col-span-2 block hover:shadow-lg transition-shadow duration-200 rounded-lg">
+        {/* Key Financial Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Link to="/orders" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
             <Card className="h-full">
               <h4 className="text-gray-500 font-medium">Total Revenue</h4>
               <p className="text-3xl font-bold text-dark truncate">{formatCurrency(stats.totalRevenue)}</p>
@@ -205,44 +213,63 @@ const Dashboard: React.FC = () => {
             <Card className="h-full">
                 <h4 className="text-gray-500 font-medium">Total Expenses</h4>
                 <p className="text-3xl font-bold text-dark truncate">{formatCurrency(stats.totalExpenses)}</p>
+                <p className="text-sm text-gray-500">Includes all costs</p>
             </Card>
           </Link>
-          <Card>
+          <Card className="h-full">
             <h4 className="text-gray-500 font-medium">Net Profit / Loss</h4>
             <p className={`text-3xl font-bold truncate ${profitLossClass}`}>{formatCurrency(stats.netProfit)}</p>
+             <p className="text-sm text-gray-500">&nbsp;</p>
           </Card>
-          <Link to="/orders" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
+           <Link to="/orders" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
             <Card className="h-full">
                 <h4 className="text-gray-500 font-medium">Down Payments</h4>
                 <p className="text-3xl font-bold text-dark truncate">{formatCurrency(stats.totalDeposits)}</p>
                 <p className="text-sm text-gray-500">from {stats.depositOrdersCount} orders</p>
             </Card>
            </Link>
-          <Link to="/customers" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
-            <Card className="h-full">
-                <h4 className="text-gray-500 font-medium">Total Customers</h4>
-                <p className="text-3xl font-bold text-dark">{stats.totalCustomers}</p>
-            </Card>
-          </Link>
+        </div>
+
+        {/* Operational Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Link to="/orders" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
+                <Card className="h-full bg-green-50">
+                    <h4 className="text-gray-500 font-medium">Shipped & Paid Orders</h4>
+                    <p className="text-3xl font-bold text-green-700 truncate">{formatCurrency(stats.shippedAndPaidValue)}</p>
+                    <p className="text-sm text-gray-500">from {stats.shippedAndPaidCount} orders</p>
+                </Card>
+            </Link>
+            <Link to="/orders" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
+                <Card className="h-full bg-yellow-50">
+                    <h4 className="text-gray-500 font-medium">Ready but Unpaid</h4>
+                    <p className="text-3xl font-bold text-yellow-700 truncate">{formatCurrency(stats.readyUnpaidValue)}</p>
+                    <p className="text-sm text-gray-500">{stats.readyUnpaidCount} orders pending payment</p>
+                </Card>
+            </Link>
+             <Link to="/customers" className="block hover:shadow-lg transition-shadow duration-200 rounded-lg">
+                <Card className="h-full">
+                    <h4 className="text-gray-500 font-medium">Total Customers</h4>
+                    <p className="text-3xl font-bold text-dark">{stats.totalCustomers}</p>
+                    <p className="text-sm text-gray-500">&nbsp;</p>
+                </Card>
+            </Link>
         </div>
         
         {/* P&L Chart */}
-        <div className="mb-6">
-            <Card title="Monthly Profit & Loss">
-                <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={monthlyProfitData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis tickFormatter={(value) => formatCurrency(Number(value))} />
-                        <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                        <Legend />
-                        <Bar dataKey="Profit" fill="#10b981" />
-                        <Bar dataKey="Revenue" fill="#3b82f6" />
-                        <Bar dataKey="Costs" fill="#ef4444" />
-                    </BarChart>
-                </ResponsiveContainer>
-            </Card>
-        </div>
+        <Card title="Monthly Profit & Loss">
+            <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={monthlyProfitData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => formatCurrency(Number(value))} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Legend />
+                    <Bar dataKey="Profit" fill="#10b981" />
+                    <Bar dataKey="Revenue" fill="#3b82f6" />
+                    <Bar dataKey="Costs" fill="#ef4444" />
+                </BarChart>
+            </ResponsiveContainer>
+        </Card>
         
         {/* Dynamic Data Lists */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

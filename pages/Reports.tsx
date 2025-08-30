@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -118,7 +117,7 @@ const Reports: React.FC = () => {
         .filter(customer => (customer.orderCount ?? 0) > 0) // Only show customers with orders in the period
         .sort((a, b) => (b.orderCount ?? 0) - (a.orderCount ?? 0));
 
-      // Materials
+      // Materials (Cost is still calculated for the materials usage report)
       const totalMaterialCost = filteredOrders.reduce((sum, order) => {
         return sum + order.items.reduce((itemSum, item) => itemSum + (item.materialsCost * item.qty), 0);
       }, 0);
@@ -151,15 +150,15 @@ const Reports: React.FC = () => {
       // Expenses
       const totalOperationalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
-      // Profit
-      const profit = totalRevenue - totalMaterialCost - totalOperationalExpenses;
+      // Profit Calculation (P&L FIX)
+      const profit = totalRevenue - totalOperationalExpenses;
 
       setReportData({
         totalOrders: filteredOrders.length,
         totalRevenue,
         totalProductsSold,
         customers: customerReport,
-        totalMaterialCost,
+        totalMaterialCost, // Keep for materials report
         materialsUsed: materialsUsedReport,
         totalOperationalExpenses,
         profit,
@@ -200,8 +199,7 @@ const Reports: React.FC = () => {
     csvRows.push(`Total Revenue,${escapeCsvCell(formatCurrency(reportData.totalRevenue))}`);
     csvRows.push(`Total Orders,${reportData.totalOrders}`);
     csvRows.push(`Total Products Sold,${reportData.totalProductsSold}`);
-    csvRows.push(`Total Material Costs,${escapeCsvCell(formatCurrency(reportData.totalMaterialCost))}`);
-    csvRows.push(`Total Other Expenses,${escapeCsvCell(formatCurrency(reportData.totalOperationalExpenses))}`);
+    csvRows.push(`Total Expenses,${escapeCsvCell(formatCurrency(reportData.totalOperationalExpenses))}`);
     csvRows.push(`Net Profit / Loss,${escapeCsvCell(formatCurrency(reportData.profit))}`);
     csvRows.push(''); // Blank line
 
@@ -222,6 +220,7 @@ const Reports: React.FC = () => {
 
     // Materials Usage Report
     csvRows.push('Materials Usage Report');
+    csvRows.push(`Total Material Cost:,${escapeCsvCell(formatCurrency(reportData.totalMaterialCost))}`);
     csvRows.push('Material Name,Total Quantity Used');
     reportData.materialsUsed.forEach(material => {
         const row = [
@@ -267,8 +266,7 @@ const Reports: React.FC = () => {
         head: [['Sales & Profit Summary', '']],
         body: [
             ['Total Revenue', formatCurrency(reportData.totalRevenue)],
-            ['Total Material Costs', formatCurrency(reportData.totalMaterialCost)],
-            ['Total Other Expenses', formatCurrency(reportData.totalOperationalExpenses)],
+            ['Total Expenses', formatCurrency(reportData.totalOperationalExpenses)],
             [{ content: 'Net Profit / Loss', styles: { fontStyle: 'bold' } }, { content: formatCurrency(reportData.profit), styles: { fontStyle: 'bold' } }],
         ],
         theme: 'grid',
@@ -291,8 +289,11 @@ const Reports: React.FC = () => {
     // Materials Usage
     doc.autoTable({
         startY: (doc as any).lastAutoTable.finalY + 15,
-        head: [['Material Name', 'Total Quantity Used']],
-        body: reportData.materialsUsed.sort((a,b) => a.name.localeCompare(b.name)).map(m => [m.name, `${m.quantity.toFixed(2)} ${m.unitLabel}`]),
+        head: [['Material Name', 'Total Quantity Used', 'Total Cost']],
+        body: [
+            ...reportData.materialsUsed.sort((a,b) => a.name.localeCompare(b.name)).map(m => [m.name, `${m.quantity.toFixed(2)} ${m.unitLabel}`, '']),
+            [{ content: 'Total Material Cost', styles: { fontStyle: 'bold', halign: 'right' } }, '', { content: formatCurrency(reportData.totalMaterialCost), styles: { fontStyle: 'bold' }}]
+        ],
         theme: 'striped',
         headStyles: { fillColor: [31, 41, 55] },
          didDrawPage: (data: any) => {
@@ -357,8 +358,8 @@ const Reports: React.FC = () => {
                                 <span className="font-bold text-green-600">{formatCurrency(reportData.totalRevenue)}</span>
                             </div>
                              <div className="flex justify-between">
-                                <span className="text-red-600">(-) Total Costs (Materials + Expenses)</span>
-                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalMaterialCost + reportData.totalOperationalExpenses)}</span>
+                                <span className="text-red-600">(-) Total Expenses</span>
+                                <span className="font-bold text-red-600">{formatCurrency(reportData.totalOperationalExpenses)}</span>
                             </div>
                             <div className={`flex justify-between border-t pt-2 mt-2 ${reportData.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                 <span className="font-bold text-lg">Net Profit / Loss</span>

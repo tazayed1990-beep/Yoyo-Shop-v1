@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 // Fix: Use v8 firestore features by importing firebase.
 // Fix: Use Firebase v9 compat libraries to get firestore namespace.
@@ -20,6 +18,8 @@ const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   
@@ -28,6 +28,7 @@ const Users: React.FC = () => {
       email: '',
       name: '',
       role: UserRole.VIEWER,
+      commissionRate: 0,
   };
   const [formState, setFormState] = useState(initialFormState);
 
@@ -37,57 +38,88 @@ const Users: React.FC = () => {
 
   const fetchUsers = async () => {
     setLoading(true);
-    // Fix: use v8 get() syntax.
     const querySnapshot = await db.collection('users').get();
     const usersData = querySnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as User[];
     setUsers(usersData);
     setLoading(false);
   };
 
+  const handleOpenModal = (user: User | null = null) => {
+    if (user) {
+      setSelectedUser(user);
+      setIsEditMode(true);
+      setFormState({
+        uid: user.uid,
+        email: user.email || '',
+        name: user.name || '',
+        role: user.role,
+        commissionRate: user.commissionRate || 0,
+      });
+    } else {
+      setSelectedUser(null);
+      setIsEditMode(false);
+      setFormState(initialFormState);
+    }
+    setIsModalOpen(true);
+  };
+
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setFormState(initialFormState);
   };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormState(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormState(prev => ({ ...prev, [name]: name === 'commissionRate' ? parseFloat(value) : value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formState.uid || !formState.email) {
-        alert('UID and Email are required.');
+    if (!formState.email) {
+        alert('Email is required.');
         return;
     }
+
+    const dataToSave = {
+        email: formState.email,
+        name: formState.name,
+        role: formState.role,
+        commissionRate: formState.commissionRate || 0,
+    };
+
     try {
-        // Fix: use v8 set() and serverTimestamp() syntax.
-        await db.collection('users').doc(formState.uid).set({
-            email: formState.email,
-            name: formState.name,
-            role: formState.role,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-        await logActivity(currentUser?.email, 'Create User', `Created user record for ${formState.email} with role ${formState.role}`);
+        if (isEditMode && selectedUser) {
+            await db.collection('users').doc(selectedUser.uid).update(dataToSave);
+            await logActivity(currentUser?.email, 'Update User', `Updated user details for ${dataToSave.email}`);
+        } else {
+            if (!formState.uid) {
+                alert('UID is required for new users.');
+                return;
+            }
+            await db.collection('users').doc(formState.uid).set({
+                ...dataToSave,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+            await logActivity(currentUser?.email, 'Create User', `Created user record for ${dataToSave.email} with role ${dataToSave.role}`);
+        }
         fetchUsers();
         handleCloseModal();
     } catch (error) {
-        console.error("Error creating user:", error);
-        alert("Failed to create user.");
+        console.error("Error saving user:", error);
+        alert("Failed to save user.");
     }
   };
   
-  const handleRoleChange = async (uid: string, role: UserRole) => {
-    const user = users.find(u => u.uid === uid);
-    try {
-        // Fix: use v8 update() syntax.
-        const userDoc = db.collection('users').doc(uid);
-        await userDoc.update({ role });
-        await logActivity(currentUser?.email, 'Update User Role', `Changed role for ${user?.email} from ${user?.role} to ${role}`);
-        // Optimistically update UI
-        setUsers(users.map(u => u.uid === uid ? { ...u, role } : u));
-    } catch (error) {
-        console.error("Error updating role: ", error);
-        alert("Failed to update role.");
+  const handleDelete = async (uid: string) => {
+    const userToDelete = users.find(u => u.uid === uid);
+    if (window.confirm(`Are you sure you want to delete the user record for ${userToDelete?.email}? This does NOT delete their authentication account.`)) {
+        try {
+            await db.collection('users').doc(uid).delete();
+            await logActivity(currentUser?.email, 'Delete User', `Deleted user record for ${userToDelete?.email}`);
+            fetchUsers();
+        } catch (error) {
+            console.error("Error deleting user:", error);
+            alert("Failed to delete user record.");
+        }
     }
   };
 
@@ -97,8 +129,8 @@ const Users: React.FC = () => {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-semibold text-gray-800">{t('users')}</h1>
-        <Button onClick={() => setIsModalOpen(true)}>{t('addUser')}</Button>
+        <h1 className="text-3xl font-semibold text-gray-800">User Management</h1>
+        <Button onClick={() => handleOpenModal()}>{t('addUser')}</Button>
       </div>
 
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
@@ -109,6 +141,8 @@ const Users: React.FC = () => {
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{t('email')}</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{t('name')}</th>
                 <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{t('role')}</th>
+                <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Commission (%)</th>
+                <th className="px-5 py-3 border-b-2 border-gray-200 bg-gray-100"></th>
               </tr>
             </thead>
             <tbody>
@@ -116,12 +150,11 @@ const Users: React.FC = () => {
                 <tr key={user.uid}>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{user.email}</td>
                   <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{user.name || '-'}</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">
-                    <Select 
-                      value={user.role}
-                      onChange={(e) => handleRoleChange(user.uid, e.target.value as UserRole)}
-                      options={USER_ROLES.map(r => ({ value: r, label: r }))}
-                    />
+                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{user.role}</td>
+                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm whitespace-nowrap">{user.commissionRate || 0}%</td>
+                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm text-right whitespace-nowrap">
+                    <Button size="sm" variant="secondary" className="mr-2" onClick={() => handleOpenModal(user)}>Edit</Button>
+                    <Button size="sm" variant="danger" onClick={() => handleDelete(user.uid)}>Delete</Button>
                   </td>
                 </tr>
               ))}
@@ -130,12 +163,13 @@ const Users: React.FC = () => {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={t('addUser')}>
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={isEditMode ? 'Edit User' : t('addUser')}>
         <form onSubmit={handleSubmit} className="space-y-4">
-            <p className="text-sm text-gray-600">First, create the user in the Firebase Authentication console, then copy their UID here to create their record in the database.</p>
-            <Input label={t('uid')} name="uid" value={formState.uid} onChange={handleFormChange} required />
+            {!isEditMode && <p className="text-sm text-gray-600">First, create the user in Firebase Authentication, then copy their UID here to create their database record.</p>}
+            <Input label={t('uid')} name="uid" value={formState.uid} onChange={handleFormChange} required disabled={isEditMode} />
             <Input label={t('email')} name="email" type="email" value={formState.email} onChange={handleFormChange} required />
             <Input label={t('name')} name="name" value={formState.name} onChange={handleFormChange} />
+            <Input label="Commission Rate (%)" name="commissionRate" type="number" min="0" max="100" step="0.1" value={formState.commissionRate} onChange={handleFormChange} />
             <Select label={t('role')} name="role" value={formState.role} onChange={handleFormChange} options={USER_ROLES.map(r => ({value: r, label: r}))} />
             <div className="mt-6 flex justify-end space-x-2">
                 <Button type="button" variant="secondary" onClick={handleCloseModal}>Cancel</Button>

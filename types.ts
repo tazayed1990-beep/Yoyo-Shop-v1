@@ -13,6 +13,7 @@ export interface User {
   createdAt?: any;
   referralCode?: string;
   referredById?: string;
+  commissionRate?: number;
 }
 
 // Customer Types
@@ -131,6 +132,10 @@ export interface DashboardStats {
   totalMaterialCost: number;
   totalExpenses: number;
   netProfit: number;
+  shippedAndPaidCount: number;
+  shippedAndPaidValue: number;
+  readyUnpaidCount: number;
+  readyUnpaidValue: number;
 }
 
 // Reward System Types

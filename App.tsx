@@ -16,6 +16,7 @@ import Users from './pages/Users';
 import Settings from './pages/Settings';
 import Sales from './pages/Sales';
 import Rewards from './pages/Rewards';
+import ActivityLog from './pages/ActivityLog';
 import { UserRole } from './types';
 
 function App() {
@@ -83,6 +84,11 @@ function App() {
               <Route path="settings" element={
                 <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
                   <Settings />
+                </ProtectedRoute>
+              } />
+              <Route path="activity-log" element={
+                <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+                  <ActivityLog />
                 </ProtectedRoute>
               } />
             </Route>

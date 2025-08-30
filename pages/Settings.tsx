@@ -1,5 +1,5 @@
-
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../hooks/useApp';
 import { Language, Settings as SettingsType } from '../types';
 import Button from '../components/ui/Button';
@@ -52,30 +52,38 @@ const Settings: React.FC = () => {
     <div>
       <h1 className="text-3xl font-semibold text-gray-800 mb-6">Settings</h1>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card title="Application Settings">
-          <div className="space-y-4">
-            <div>
-              <h4 className="font-medium text-gray-700">Language</h4>
-              <p className="text-sm text-gray-500">Choose the display language of the application.</p>
-              <div className="mt-2 space-x-2">
-                <Button 
-                  onClick={() => handleLanguageChange('en')} 
-                  variant={language === 'en' ? 'primary' : 'secondary'}
-                  className={language !== 'en' ? 'opacity-50' : ''}
-                >
-                  English
-                </Button>
-                <Button 
-                  onClick={() => handleLanguageChange('ar')} 
-                  variant={language === 'ar' ? 'primary' : 'secondary'}
-                  className={language !== 'ar' ? 'opacity-50' : ''}
-                >
-                  العربية
-                </Button>
+        <div className="space-y-8">
+          <Card title="Application Settings">
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-medium text-gray-700">Language</h4>
+                <p className="text-sm text-gray-500">Choose the display language of the application.</p>
+                <div className="mt-2 space-x-2">
+                  <Button 
+                    onClick={() => handleLanguageChange('en')} 
+                    variant={language === 'en' ? 'primary' : 'secondary'}
+                    className={language !== 'en' ? 'opacity-50' : ''}
+                  >
+                    English
+                  </Button>
+                  <Button 
+                    onClick={() => handleLanguageChange('ar')} 
+                    variant={language === 'ar' ? 'primary' : 'secondary'}
+                    className={language !== 'ar' ? 'opacity-50' : ''}
+                  >
+                    العربية
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+          <Card title="System Administration">
+            <p className="text-sm text-gray-500 mb-4">View a log of all significant actions taken by users within the application.</p>
+            <Link to="/activity-log">
+                <Button>View Activity Log</Button>
+            </Link>
+          </Card>
+        </div>
         
         <Card title="Invoice Details">
            <form onSubmit={handleSaveSettings}>

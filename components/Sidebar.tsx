@@ -86,7 +86,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
                       <span className="mx-4 font-medium">Rewards</span>
                   </NavLink>
                   <NavLink to="/users" className={navLinkClasses}>
-                      <span className="mx-4 font-medium">{t('users')}</span>
+                      <span className="mx-4 font-medium">User Management</span>
                   </NavLink>
                   <NavLink to="/settings" className={navLinkClasses}>
                       <span className="mx-4 font-medium">{t('settings')}</span>
